@@ -1,0 +1,127 @@
+### ============================================================
+### TELEGRAM CHANNEL - Scripts de prueba
+### Requiere: VS Code REST Client extension o IntelliJ HTTP Client
+### Bot: @Jenkins1234bot  companyId=1  channelId=3
+### Base URL: http://localhost:8080
+### ============================================================
+
+@baseUrl = http://localhost:8080
+@botToken = 8488844160:AAGHTthIc034kD2_6H2IErpEjMwzVcPzRJ4
+@companyId = 1
+@telegramApi = https://api.telegram.org/bot{{botToken}}
+
+# ─────────────────────────────────────────────
+# 1. Verificar que el bot token es válido (getMe)
+# ─────────────────────────────────────────────
+### GET Bot Info
+GET {{telegramApi}}/getMe
+
+###
+
+# ─────────────────────────────────────────────
+# 2. Ver qué webhook tiene registrado Telegram
+# ─────────────────────────────────────────────
+### GET Webhook Info
+GET {{telegramApi}}/getWebhookInfo
+
+###
+
+# ─────────────────────────────────────────────
+# 3. Registrar el webhook manualmente
+#    (reemplaza la URL con tu tunnel activo)
+# ─────────────────────────────────────────────
+### POST Set Webhook
+POST {{telegramApi}}/setWebhook?url=https://collections-prefix-visitors-signature.trycloudflare.com/api/v1/crm/webhooks/telegram/{{companyId}}
+
+###
+
+# ─────────────────────────────────────────────
+# 4. Simular un mensaje entrante de Telegram
+#    (como si Telegram enviara el webhook al backend)
+#    Cambia "chat_id" y "from.id" por tu ID real de Telegram
+# ─────────────────────────────────────────────
+### POST Simular mensaje entrante
+POST {{baseUrl}}/api/v1/crm/webhooks/telegram/{{companyId}}
+Content-Type: application/json
+
+{
+  "update_id": 999000001,
+  "message": {
+    "message_id": 101,
+    "from": {
+      "id": 123456789,
+      "is_bot": false,
+      "first_name": "Isaac",
+      "last_name": "Test",
+      "username": "isaactest"
+    },
+    "chat": {
+      "id": 123456789,
+      "type": "private"
+    },
+    "date": 1744689600,
+    "text": "Hola desde prueba simulada"
+  }
+}
+
+###
+
+# ─────────────────────────────────────────────
+# 5. Ver canales registrados
+# ─────────────────────────────────────────────
+### GET Channel Connections
+GET {{baseUrl}}/api/v1/crm/channels
+
+###
+
+# ─────────────────────────────────────────────
+# 6. Ver info del webhook del canal id=3
+# ─────────────────────────────────────────────
+### GET Webhook Info del canal
+GET {{baseUrl}}/api/v1/crm/channels/3/webhook-info
+
+###
+
+# ─────────────────────────────────────────────
+# 7. Enviar mensaje OUTBOUND al chat de Telegram
+#    (necesitas el conversationId creado por el mensaje entrante)
+#    sentByUserId=1 = Dr. Juan García (admin del seed)
+# ─────────────────────────────────────────────
+### POST Enviar mensaje saliente
+POST {{baseUrl}}/api/v1/crm/messages/send
+Content-Type: application/json
+
+{
+  "conversationId": 1,
+  "content": "Hola, soy el bot respondiendo",
+  "sentByUserId": 1
+}
+
+###
+
+# ─────────────────────────────────────────────
+# 8. Ver mensajes de una conversación
+# ─────────────────────────────────────────────
+### GET Mensajes de conversación 1
+GET {{baseUrl}}/api/v1/crm/messages/conversation/1
+
+###
+
+# ─────────────────────────────────────────────
+# 9. Ver conversaciones
+# ─────────────────────────────────────────────
+### GET Conversaciones
+GET {{baseUrl}}/api/v1/crm/conversations
+
+###
+
+# ─────────────────────────────────────────────
+# 10. SSE - Suscribirse a eventos en tiempo real
+#     (abre en navegador o usa curl)
+#     curl "http://localhost:8080/api/v1/crm/events/messages?companyId=1"
+# ─────────────────────────────────────────────
+### GET SSE Stream (solo funciona si el cliente soporta streaming)
+GET {{baseUrl}}/api/v1/crm/events/messages?companyId={{companyId}}
+Accept: text/event-stream
+
+###
