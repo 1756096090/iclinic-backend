@@ -51,6 +51,13 @@ INSERT INTO crm_contact_phones (id, contact_id, raw_phone, normalized_phone, com
 INSERT INTO crm_contact_phones (id, contact_id, raw_phone, normalized_phone, company_id, created_at) VALUES (4, 4, '+573002345679', '+573002345679', 2, CURRENT_TIMESTAMP);
 
 -- =====================================================
+-- 6.5 CHANNEL USER LINKS
+-- =====================================================
+INSERT INTO crm_channel_user_links (id, contact_id, channel_type, external_user_id, external_chat_id, username, display_name, created_at) VALUES (1, 1, 'WHATSAPP', '593987654322', '593987654322', NULL, 'Marco Avalos Quezada', CURRENT_TIMESTAMP);
+INSERT INTO crm_channel_user_links (id, contact_id, channel_type, external_user_id, external_chat_id, username, display_name, created_at) VALUES (2, 3, 'WHATSAPP', '573001234568', '573001234568', NULL, 'Felipe Gómez Hernández', CURRENT_TIMESTAMP);
+INSERT INTO crm_channel_user_links (id, contact_id, channel_type, external_user_id, external_chat_id, username, display_name, created_at) VALUES (3, 4, 'WHATSAPP', '573002345679', '573002345679', NULL, 'Valentina Cruz López', CURRENT_TIMESTAMP);
+
+-- =====================================================
 -- 7. CRM CONVERSATIONS
 -- contact_id 1 → WhatsApp (channel 1)
 -- contact_id 2 → Telegram (channel 3)
@@ -81,6 +88,7 @@ ALTER TABLE users ALTER COLUMN id RESTART WITH 5;
 ALTER TABLE crm_channel_connections ALTER COLUMN id RESTART WITH 4;
 ALTER TABLE crm_contacts ALTER COLUMN id RESTART WITH 5;
 ALTER TABLE crm_contact_phones ALTER COLUMN id RESTART WITH 5;
+ALTER TABLE crm_channel_user_links ALTER COLUMN id RESTART WITH 4;
 ALTER TABLE crm_conversations ALTER COLUMN id RESTART WITH 5;
 ALTER TABLE crm_messages ALTER COLUMN id RESTART WITH 6;
 

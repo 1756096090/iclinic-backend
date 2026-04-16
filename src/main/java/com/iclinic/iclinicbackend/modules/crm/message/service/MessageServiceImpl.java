@@ -11,6 +11,7 @@ import com.iclinic.iclinicbackend.modules.crm.contact.service.CrmContactService;
 import com.iclinic.iclinicbackend.modules.crm.conversation.entity.Conversation;
 import com.iclinic.iclinicbackend.modules.crm.conversation.repository.ConversationRepository;
 import com.iclinic.iclinicbackend.modules.crm.conversation.service.ConversationService;
+import com.iclinic.iclinicbackend.modules.crm.exception.InvalidChannelConfigurationException;
 import com.iclinic.iclinicbackend.modules.crm.message.dto.SendMessageRequestDto;
 import com.iclinic.iclinicbackend.modules.crm.message.entity.CrmMessage;
 import com.iclinic.iclinicbackend.modules.crm.message.repository.CrmMessageRepository;
@@ -19,6 +20,7 @@ import com.iclinic.iclinicbackend.modules.crm.webhook.dto.IncomingChannelMessage
 import com.iclinic.iclinicbackend.modules.user.entity.User;
 import com.iclinic.iclinicbackend.modules.user.repository.UserRepository;
 import com.iclinic.iclinicbackend.shared.enums.ChannelConnectionStatus;
+import com.iclinic.iclinicbackend.shared.enums.ChannelType;
 import com.iclinic.iclinicbackend.shared.enums.MessageDirection;
 import com.iclinic.iclinicbackend.shared.enums.MessageStatus;
 import com.iclinic.iclinicbackend.shared.enums.MessageType;
@@ -29,12 +31,16 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @Transactional
 @RequiredArgsConstructor
 @Slf4j
 public class MessageServiceImpl implements MessageService {
+
+    private static final Set<ChannelConnectionStatus> OPERATIVE_STATUSES =
+            Set.of(ChannelConnectionStatus.PENDING, ChannelConnectionStatus.ACTIVE, ChannelConnectionStatus.VERIFIED);
 
     private final CrmMessageRepository messageRepository;
     private final ConversationRepository conversationRepository;
@@ -63,11 +69,8 @@ public class MessageServiceImpl implements MessageService {
 
         ChannelConnection connection = conversation.getChannelConnection();
         CrmContact contact = conversation.getContact();
-        
-        ChannelUserLink channelUserLink = channelUserLinkRepository
-                .findByContactAndChannelType(contact, connection.getChannelType())
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "No channel user link found for contact: " + contact.getId()));
+
+        ChannelUserLink channelUserLink = resolveChannelUserLink(conversation, contact, connection);
 
         MessagingChannelAdapter adapter = adapterRegistry.get(connection.getChannelType());
         String externalMessageId;
@@ -99,6 +102,57 @@ public class MessageServiceImpl implements MessageService {
         return savedMessage;
     }
 
+        private ChannelUserLink resolveChannelUserLink(
+                        Conversation conversation,
+                        CrmContact contact,
+                        ChannelConnection connection) {
+
+                return channelUserLinkRepository
+                                .findByContactAndChannelType(contact, connection.getChannelType())
+                                .orElseGet(() -> createLinkWhenPossible(conversation, contact, connection));
+        }
+
+        private ChannelUserLink createLinkWhenPossible(
+                        Conversation conversation,
+                        CrmContact contact,
+                        ChannelConnection connection) {
+
+                if (ChannelType.WHATSAPP.equals(connection.getChannelType())) {
+                        String phone = normalizePhoneForExternalId(contact.getPhone());
+                        if (phone == null || phone.isBlank()) {
+                                throw new InvalidChannelConfigurationException(
+                                                "La conversacion " + conversation.getId() + " no tiene ChannelUserLink y el contacto "
+                                                                + contact.getId() + " no tiene telefono valido para autovincular WhatsApp");
+                        }
+
+                        ChannelUserLink link = ChannelUserLink.builder()
+                                        .contact(contact)
+                                        .channelType(connection.getChannelType())
+                                        .externalUserId(phone)
+                                        .externalChatId(phone)
+                                        .displayName(contact.getFullName())
+                                        .build();
+
+                        ChannelUserLink saved = channelUserLinkRepository.save(link);
+                        log.info("ChannelUserLink autogenerado para WhatsApp: conversationId={} contactId={} phone={}",
+                                        conversation.getId(), contact.getId(), phone);
+                        return saved;
+                }
+
+                throw new InvalidChannelConfigurationException(
+                                "La conversacion " + conversation.getId() + " no tiene ChannelUserLink para "
+                                                + connection.getChannelType()
+                                                + ". Para Telegram primero debe llegar un mensaje entrante real del contacto para registrar chat_id/user_id.");
+        }
+
+        private String normalizePhoneForExternalId(String raw) {
+                if (raw == null) {
+                        return null;
+                }
+                String digits = raw.replaceAll("[^0-9]", "");
+                return digits.isBlank() ? null : digits;
+        }
+
     @Override
     public void processInboundMessage(InboundWebhookMessageDto dto) {
         log.info("Processing inbound message from phone={} channel={}", dto.getContactPhone(), dto.getChannelType());
@@ -108,12 +162,12 @@ public class MessageServiceImpl implements MessageService {
         }
 
         ChannelConnection connection = channelConnectionRepository
-                .findByCompanyIdAndChannelTypeAndStatus(
+                .findActiveByCompanyAndChannel(
                         dto.getCompanyId(),
                         dto.getChannelType(),
-                        ChannelConnectionStatus.ACTIVE)
+                        OPERATIVE_STATUSES)
                 .orElseThrow(() -> new com.iclinic.iclinicbackend.modules.crm.exception.ChannelConnectionNotFoundException(
-                        "Canal activo no encontrado para companyId=" + dto.getCompanyId()));
+                        "Canal operativo no encontrado para companyId=" + dto.getCompanyId()));
 
         IncomingChannelMessage incomingMsg = IncomingChannelMessage.builder()
                 .companyId(dto.getCompanyId())

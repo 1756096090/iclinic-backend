@@ -26,7 +26,7 @@ public class TelegramWebhookController {
     private final ChannelConnectionRepository channelConnectionRepository;
 
     private static final Set<ChannelConnectionStatus> OPERATIVE =
-            Set.of(ChannelConnectionStatus.ACTIVE, ChannelConnectionStatus.VERIFIED);
+            Set.of(ChannelConnectionStatus.PENDING, ChannelConnectionStatus.ACTIVE, ChannelConnectionStatus.VERIFIED);
 
     @PostMapping("/{companyId}")
     @Operation(summary = "Recibir actualizaciones de Telegram",
