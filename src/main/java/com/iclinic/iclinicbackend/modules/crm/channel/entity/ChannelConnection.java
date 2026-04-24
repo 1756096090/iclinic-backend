@@ -61,6 +61,9 @@ public class ChannelConnection {
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
+    @Column
+    private LocalDateTime deletedAt;
+
     @PrePersist
     public void prePersist() {
         if (createdAt == null) {

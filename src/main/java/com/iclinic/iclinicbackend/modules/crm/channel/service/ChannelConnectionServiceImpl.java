@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.List;
 
@@ -41,6 +42,7 @@ public class ChannelConnectionServiceImpl implements ChannelConnectionService {
     @Override
     public List<ChannelConnectionResponseDto> getAll() {
         return channelConnectionRepository.findAll().stream()
+                .filter(c -> c.getDeletedAt() == null)
                 .map(this::toResponseDto)
                 .toList();
     }
@@ -161,7 +163,9 @@ public class ChannelConnectionServiceImpl implements ChannelConnectionService {
     @Override
     public void deleteById(Long id) {
         ChannelConnection connection = load(id);
-        channelConnectionRepository.delete(connection);
+        connection.setDeletedAt(LocalDateTime.now());
+        channelConnectionRepository.save(connection);
+        log.info("Canal eliminado lógicamente: channelId={}", id);
     }
 
     @Override

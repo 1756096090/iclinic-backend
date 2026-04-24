@@ -14,7 +14,7 @@ import java.util.Optional;
 public interface ChannelConnectionRepository extends JpaRepository<ChannelConnection, Long> {
 
     @Query("SELECT c FROM ChannelConnection c JOIN FETCH c.company " +
-           "WHERE c.channelType = :channelType AND c.status IN :statuses")
+           "WHERE c.channelType = :channelType AND c.status IN :statuses AND c.deletedAt IS NULL")
     List<ChannelConnection> findByChannelTypeAndStatusInWithCompany(
             @Param("channelType") ChannelType channelType,
             @Param("statuses") Collection<ChannelConnectionStatus> statuses
@@ -28,20 +28,28 @@ public interface ChannelConnectionRepository extends JpaRepository<ChannelConnec
     @Query("SELECT c FROM ChannelConnection c " +
            "WHERE c.company.id = :companyId " +
            "AND c.channelType = :channelType " +
-           "AND c.status IN :statuses")
+           "AND c.status IN :statuses " +
+           "AND c.deletedAt IS NULL")
     Optional<ChannelConnection> findActiveByCompanyAndChannel(
             @Param("companyId") Long companyId,
             @Param("channelType") ChannelType channelType,
             @Param("statuses") Collection<ChannelConnectionStatus> statuses
     );
 
+    @Query("SELECT c FROM ChannelConnection c " +
+           "WHERE c.company.id = :companyId " +
+           "AND c.channelType = :channelType " +
+           "AND c.status = :status " +
+           "AND c.deletedAt IS NULL")
     Optional<ChannelConnection> findByCompanyIdAndChannelTypeAndStatus(
             Long companyId,
             ChannelType channelType,
             ChannelConnectionStatus status
     );
 
-    Optional<ChannelConnection> findByWebhookVerifyToken(String webhookVerifyToken);
+    @Query("SELECT c FROM ChannelConnection c " +
+           "WHERE c.webhookVerifyToken = :token AND c.deletedAt IS NULL")
+    Optional<ChannelConnection> findByWebhookVerifyToken(@Param("token") String webhookVerifyToken);
 
     /**
      * Busca una conexión operativa de WhatsApp por externalPhoneNumberId cargando la empresa.
@@ -50,12 +58,14 @@ public interface ChannelConnectionRepository extends JpaRepository<ChannelConnec
     @Query("SELECT c FROM ChannelConnection c JOIN FETCH c.company " +
            "WHERE c.externalPhoneNumberId = :phoneNumberId " +
            "AND c.channelType = :channelType " +
-           "AND c.status IN :statuses")
+           "AND c.status IN :statuses " +
+           "AND c.deletedAt IS NULL")
     Optional<ChannelConnection> findByExternalPhoneNumberIdAndChannelTypeAndStatusInWithCompany(
             @Param("phoneNumberId") String phoneNumberId,
             @Param("channelType") ChannelType channelType,
             @Param("statuses") Collection<ChannelConnectionStatus> statuses
     );
 
-    List<ChannelConnection> findByCompanyId(Long companyId);
+    @Query("SELECT c FROM ChannelConnection c WHERE c.company.id = :companyId AND c.deletedAt IS NULL")
+    List<ChannelConnection> findByCompanyId(@Param("companyId") Long companyId);
 }
