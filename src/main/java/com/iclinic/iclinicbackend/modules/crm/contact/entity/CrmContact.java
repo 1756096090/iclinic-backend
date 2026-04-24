@@ -2,11 +2,12 @@ package com.iclinic.iclinicbackend.modules.crm.contact.entity;
 
 import com.iclinic.iclinicbackend.modules.branch.entity.Branch;
 import com.iclinic.iclinicbackend.modules.company.entity.Company;
+import com.iclinic.iclinicbackend.shared.entity.ActivableEntity;
 import com.iclinic.iclinicbackend.shared.enums.ChannelType;
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.experimental.SuperBuilder;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -29,12 +30,8 @@ import java.util.List;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class CrmContact {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+@SuperBuilder
+public class CrmContact extends ActivableEntity {
 
     @ManyToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "company_id")
@@ -62,30 +59,8 @@ public class CrmContact {
     @Column(nullable = false, length = 30)
     private ChannelType sourceChannel;
 
-    @Column(nullable = false)
-    private Boolean active;
-
     /** Teléfonos adicionales de esta persona (0 o más). */
     @OneToMany(mappedBy = "contact", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private List<CrmContactPhone> phones = new ArrayList<>();
-
-    @Column(nullable = false)
-    private Instant createdAt;
-
-    @Column(nullable = false)
-    private Instant updatedAt;
-
-    @PrePersist
-    public void prePersist() {
-        Instant now = Instant.now();
-        this.createdAt = now;
-        this.updatedAt = now;
-        if (this.active == null) this.active = true;
-    }
-
-    @PreUpdate
-    public void preUpdate() {
-        this.updatedAt = Instant.now();
-    }
 }

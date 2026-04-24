@@ -1,7 +1,9 @@
 package com.iclinic.iclinicbackend.modules.crm.contact.entity;
 
+import com.iclinic.iclinicbackend.shared.entity.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.experimental.SuperBuilder;
 
 import java.time.Instant;
 
@@ -27,12 +29,8 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class CrmContactPhone {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+@SuperBuilder
+public class CrmContactPhone extends BaseEntity {
 
     @ManyToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "contact_id", nullable = false)
@@ -59,12 +57,9 @@ public class CrmContactPhone {
     @Column(name = "company_id", nullable = false)
     private Long companyId;
 
-    @Column(nullable = false)
-    private Instant createdAt;
-
     @PrePersist
     public void prePersist() {
-        if (createdAt == null) createdAt = Instant.now();
+        super.onCreate();
     }
 }
 

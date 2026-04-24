@@ -1,4 +1,4 @@
-package com.iclinic.iclinicbackend.modules.appointment.enums;
+package com.iclinic.iclinicbackend.shared.enums;
 
 public enum AppointmentStatus {
     SCHEDULED,

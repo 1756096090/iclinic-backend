@@ -3,9 +3,11 @@ package com.iclinic.iclinicbackend.modules.crm.conversation.entity;
 import com.iclinic.iclinicbackend.modules.crm.channel.entity.ChannelConnection;
 import com.iclinic.iclinicbackend.modules.crm.contact.entity.CrmContact;
 import com.iclinic.iclinicbackend.modules.user.entity.User;
+import com.iclinic.iclinicbackend.shared.entity.BaseEntity;
 import com.iclinic.iclinicbackend.shared.enums.ConversationStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.experimental.SuperBuilder;
 
 import java.time.Instant;
 
@@ -15,12 +17,8 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class Conversation {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+@SuperBuilder
+public class Conversation extends BaseEntity {
 
     @ManyToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "contact_id")
@@ -41,23 +39,15 @@ public class Conversation {
     @Column(nullable = false)
     private Instant lastMessageAt;
 
-    @Column(nullable = false)
-    private Instant createdAt;
-
-    @Column(nullable = false)
-    private Instant updatedAt;
-
     @PrePersist
     public void prePersist() {
-        Instant now = Instant.now();
-        this.createdAt = now;
-        this.updatedAt = now;
-        if (this.lastMessageAt == null) this.lastMessageAt = now;
+        super.onCreate();
+        if (this.lastMessageAt == null) this.lastMessageAt = Instant.now();
         if (this.status == null) this.status = ConversationStatus.OPEN;
     }
 
     @PreUpdate
     public void preUpdate() {
-        this.updatedAt = Instant.now();
+        super.onUpdate();
     }
 }
