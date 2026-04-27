@@ -2,11 +2,17 @@ package com.iclinic.iclinicbackend.modules.appointment.dto;
 
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotNull;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class RescheduleAppointmentRequestDto {
 
     @NotNull(message = "La nueva fecha/hora de inicio es requerida")
@@ -19,4 +25,5 @@ public class RescheduleAppointmentRequestDto {
 
     private String notes;
 }
+
 
