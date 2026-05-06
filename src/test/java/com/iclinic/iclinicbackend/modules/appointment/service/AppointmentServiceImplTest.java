@@ -9,8 +9,10 @@ import com.iclinic.iclinicbackend.modules.appointment.repository.AppointmentRepo
 import com.iclinic.iclinicbackend.modules.appointment.repository.BranchBlockedSlotRepository;
 import com.iclinic.iclinicbackend.modules.appointment.repository.BranchScheduleRepository;
 import com.iclinic.iclinicbackend.modules.branch.entity.Branch;
+import com.iclinic.iclinicbackend.modules.branch.entity.ClinicBranch;
 import com.iclinic.iclinicbackend.modules.branch.repository.BranchRepository;
 import com.iclinic.iclinicbackend.modules.company.entity.Company;
+import com.iclinic.iclinicbackend.modules.company.entity.EcuadorianCompany;
 import com.iclinic.iclinicbackend.modules.company.repository.CompanyRepository;
 import com.iclinic.iclinicbackend.modules.crm.contact.entity.CrmContact;
 import com.iclinic.iclinicbackend.modules.crm.contact.repository.CrmContactRepository;
@@ -75,8 +77,12 @@ class AppointmentServiceImplTest {
     void setUp() {
         testDate = LocalDate.now().plusDays(1);
 
-        company = Company.builder().id(1L).build();
-        branch = Branch.builder().id(1L).company(company).build();
+        company = new EcuadorianCompany("Test Company", "1234567890123");
+        company.setId(1L);
+
+        branch = new ClinicBranch("Test Branch", "Test Address", true, company);
+        branch.setId(1L);
+
         contact = CrmContact.builder().id(1L).company(company).build();
 
         schedule = BranchSchedule.builder()
@@ -196,7 +202,6 @@ class AppointmentServiceImplTest {
                 .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(10, 0)))
                 .build();
 
-        when(companyRepository.findById(1L)).thenReturn(Optional.of(company));
 
         assertThrows(IllegalArgumentException.class, () -> appointmentService.createAppointment(dto));
     }

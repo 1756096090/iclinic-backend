@@ -23,7 +23,7 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("MetaWebhookService Tests")
-class MetaWebhookServiceImplTest {
+class MetaWebhookServiceTest {
 
     @Mock private ChannelConnectionRepository channelConnectionRepository;
     @Mock private MessageService messageService;
