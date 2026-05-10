@@ -24,6 +24,9 @@ public class CreateAppointmentRequestDto {
     @NotNull(message = "El ID del contacto es requerido")
     private Long contactId;
 
+    @NotNull(message = "El ID del doctor es requerido")
+    private Long doctorId;
+
     @NotNull(message = "La fecha/hora de inicio es requerida")
     @Future(message = "La cita debe agendarse en el futuro")
     private LocalDateTime scheduledStart;

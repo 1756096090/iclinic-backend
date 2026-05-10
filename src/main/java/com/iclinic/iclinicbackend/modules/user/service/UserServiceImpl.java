@@ -19,6 +19,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -83,6 +86,33 @@ public class UserServiceImpl implements UserService {
     @Transactional(readOnly = true)
     public List<UserResponseDto> findByBranchId(Long branchId) {
         return userRepository.findByBranchId(branchId).stream()
+                .map(userMapper::toResponseDto)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserResponseDto> findDoctorsByBranchId(Long branchId) {
+        return userRepository.findByBranchIdAndRoleAndActiveTrueOrderByFirstNameAsc(branchId, UserRole.DENTIST).stream()
+                .map(userMapper::toResponseDto)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserResponseDto> searchByBranchIdAndText(Long branchId, String query, Integer limit) {
+        int safeLimit = normalizeLimit(limit);
+        String safeQuery = query == null ? "" : query.trim();
+
+        return userRepository.searchByBranchIdAndText(
+                        branchId,
+                        safeQuery,
+                        PageRequest.of(0, safeLimit, Sort.by("firstName").ascending()
+                                .and(Sort.by("lastName").ascending())
+                                .and(Sort.by("email").ascending()))
+                )
+                .getContent()
+                .stream()
                 .map(userMapper::toResponseDto)
                 .collect(Collectors.toList());
     }
@@ -157,6 +187,10 @@ public class UserServiceImpl implements UserService {
                     .orElseThrow(() -> new BranchNotFoundException(dto.getBranchId()));
             user.setBranch(branch);
         }
+    }
+
+    private int normalizeLimit(Integer limit) {
+        return (limit == null || limit < 1) ? 20 : limit;
     }
 }
 

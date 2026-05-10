@@ -2,7 +2,6 @@ package com.iclinic.iclinicbackend.modules.appointment.service;
 
 import com.iclinic.iclinicbackend.modules.appointment.dto.*;
 import com.iclinic.iclinicbackend.modules.appointment.entity.Appointment;
-import com.iclinic.iclinicbackend.modules.appointment.entity.BranchBlockedSlot;
 import com.iclinic.iclinicbackend.modules.appointment.entity.BranchSchedule;
 import com.iclinic.iclinicbackend.modules.appointment.mapper.AppointmentMapper;
 import com.iclinic.iclinicbackend.modules.appointment.repository.AppointmentRepository;
@@ -16,7 +15,10 @@ import com.iclinic.iclinicbackend.modules.company.entity.EcuadorianCompany;
 import com.iclinic.iclinicbackend.modules.company.repository.CompanyRepository;
 import com.iclinic.iclinicbackend.modules.crm.contact.entity.CrmContact;
 import com.iclinic.iclinicbackend.modules.crm.contact.repository.CrmContactRepository;
+import com.iclinic.iclinicbackend.modules.user.entity.EcuadorianUser;
+import com.iclinic.iclinicbackend.modules.user.repository.UserRepository;
 import com.iclinic.iclinicbackend.shared.enums.AppointmentStatus;
+import com.iclinic.iclinicbackend.shared.enums.UserRole;
 import com.iclinic.iclinicbackend.shared.exception.BranchNotFoundException;
 import com.iclinic.iclinicbackend.shared.exception.CompanyNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +29,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -61,6 +62,9 @@ class AppointmentServiceImplTest {
     private CrmContactRepository crmContactRepository;
 
     @Mock
+    private UserRepository userRepository;
+
+    @Mock
     private AppointmentMapper appointmentMapper;
 
     @InjectMocks
@@ -69,6 +73,7 @@ class AppointmentServiceImplTest {
     private Company company;
     private Branch branch;
     private CrmContact contact;
+    private EcuadorianUser doctor;
     private BranchSchedule schedule;
     private Appointment appointment;
     private LocalDate testDate;
@@ -85,9 +90,22 @@ class AppointmentServiceImplTest {
 
         contact = CrmContact.builder().id(1L).company(company).build();
 
+        doctor = new EcuadorianUser();
+        doctor.setId(2L);
+        doctor.setFirstName("Dr");
+        doctor.setLastName("House");
+        doctor.setEmail("doctor@test.com");
+        doctor.setPassword("secret");
+        doctor.setRole(UserRole.DENTIST);
+        doctor.setDocumentType(com.iclinic.iclinicbackend.shared.enums.DocumentType.CEDULA_EC);
+        doctor.setDocumentNumber("1711111111");
+        doctor.setCompany(company);
+        doctor.setBranch(branch);
+
         schedule = BranchSchedule.builder()
                 .id(1L)
                 .branch(branch)
+                .doctor(doctor)
                 .dayOfWeek(testDate.getDayOfWeek())
                 .startTime(LocalTime.of(9, 0))
                 .endTime(LocalTime.of(17, 0))
@@ -100,6 +118,7 @@ class AppointmentServiceImplTest {
                 .company(company)
                 .branch(branch)
                 .contact(contact)
+                .doctor(doctor)
                 .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(10, 0)))
                 .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(10, 30)))
                 .status(AppointmentStatus.SCHEDULED)
@@ -110,28 +129,30 @@ class AppointmentServiceImplTest {
     @DisplayName("getAvailableSlots - Retorna slots cuando no hay citas ni bloques")
     void testGetAvailableSlotsSuccess() {
         when(branchRepository.findById(1L)).thenReturn(Optional.of(branch));
-        when(branchScheduleRepository.findByBranchIdAndDayOfWeekAndActiveTrue(1L, testDate.getDayOfWeek()))
+        when(userRepository.findById(2L)).thenReturn(Optional.of(doctor));
+        when(branchScheduleRepository.findByDoctorIdAndDayOfWeekAndActiveTrue(2L, testDate.getDayOfWeek()))
                 .thenReturn(Optional.of(schedule));
         when(branchBlockedSlotRepository.findByBranchIdAndActiveTrueAndStartDateTimeLessThanAndEndDateTimeGreaterThan(
                 anyLong(), any(), any())).thenReturn(List.of());
-        when(appointmentRepository.findByBranchIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThan(
+        when(appointmentRepository.findByDoctorIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThan(
                 anyLong(), anyList(), any(), any())).thenReturn(List.of());
 
-        List<AvailableSlotDto> slots = appointmentService.getAvailableSlots(1L, testDate);
+        List<AvailableSlotDto> slots = appointmentService.getAvailableSlots(1L, 2L, testDate);
 
         assertNotNull(slots);
         assertFalse(slots.isEmpty());
-        assertTrue(slots.size() > 0);
+        assertFalse(slots.isEmpty());
     }
 
     @Test
     @DisplayName("getAvailableSlots - Retorna lista vacía cuando no hay horario")
     void testGetAvailableSlotsNoSchedule() {
         when(branchRepository.findById(1L)).thenReturn(Optional.of(branch));
-        when(branchScheduleRepository.findByBranchIdAndDayOfWeekAndActiveTrue(1L, testDate.getDayOfWeek()))
+        when(userRepository.findById(2L)).thenReturn(Optional.of(doctor));
+        when(branchScheduleRepository.findByDoctorIdAndDayOfWeekAndActiveTrue(2L, testDate.getDayOfWeek()))
                 .thenReturn(Optional.empty());
 
-        List<AvailableSlotDto> slots = appointmentService.getAvailableSlots(1L, testDate);
+        List<AvailableSlotDto> slots = appointmentService.getAvailableSlots(1L, 2L, testDate);
 
         assertNotNull(slots);
         assertTrue(slots.isEmpty());
@@ -142,7 +163,7 @@ class AppointmentServiceImplTest {
     void testGetAvailableSlotsNoBranch() {
         when(branchRepository.findById(1L)).thenThrow(new BranchNotFoundException(1L));
 
-        assertThrows(BranchNotFoundException.class, () -> appointmentService.getAvailableSlots(1L, testDate));
+        assertThrows(BranchNotFoundException.class, () -> appointmentService.getAvailableSlots(1L, 2L, testDate));
     }
 
     @Test
@@ -152,6 +173,7 @@ class AppointmentServiceImplTest {
                 .companyId(1L)
                 .branchId(1L)
                 .contactId(1L)
+                .doctorId(2L)
                 .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(10, 0)))
                 .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(10, 30)))
                 .notes("Test appointment")
@@ -160,11 +182,12 @@ class AppointmentServiceImplTest {
         when(companyRepository.findById(1L)).thenReturn(Optional.of(company));
         when(branchRepository.findById(1L)).thenReturn(Optional.of(branch));
         when(crmContactRepository.findById(1L)).thenReturn(Optional.of(contact));
-        when(branchScheduleRepository.findByBranchIdAndDayOfWeekAndActiveTrue(1L, testDate.getDayOfWeek()))
+        when(userRepository.findById(2L)).thenReturn(Optional.of(doctor));
+        when(branchScheduleRepository.findByDoctorIdAndDayOfWeekAndActiveTrue(2L, testDate.getDayOfWeek()))
                 .thenReturn(Optional.of(schedule));
         when(branchBlockedSlotRepository.findByBranchIdAndActiveTrueAndStartDateTimeLessThanAndEndDateTimeGreaterThan(
                 anyLong(), any(), any())).thenReturn(List.of());
-        when(appointmentRepository.findByBranchIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThan(
+        when(appointmentRepository.findByDoctorIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThan(
                 anyLong(), anyList(), any(), any())).thenReturn(List.of());
         when(appointmentRepository.save(any())).thenReturn(appointment);
         when(appointmentMapper.toResponseDto(any())).thenReturn(AppointmentResponseDto.builder().id(1L).build());
@@ -182,6 +205,7 @@ class AppointmentServiceImplTest {
                 .companyId(999L)
                 .branchId(1L)
                 .contactId(1L)
+                .doctorId(2L)
                 .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(10, 0)))
                 .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(10, 30)))
                 .build();
@@ -198,6 +222,7 @@ class AppointmentServiceImplTest {
                 .companyId(1L)
                 .branchId(1L)
                 .contactId(1L)
+                .doctorId(2L)
                 .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(10, 30)))
                 .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(10, 0)))
                 .build();
@@ -213,6 +238,7 @@ class AppointmentServiceImplTest {
                 .companyId(1L)
                 .branchId(1L)
                 .contactId(1L)
+                .doctorId(2L)
                 .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(10, 0)))
                 .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(10, 30)))
                 .build();
@@ -227,11 +253,12 @@ class AppointmentServiceImplTest {
         when(companyRepository.findById(1L)).thenReturn(Optional.of(company));
         when(branchRepository.findById(1L)).thenReturn(Optional.of(branch));
         when(crmContactRepository.findById(1L)).thenReturn(Optional.of(contact));
-        when(branchScheduleRepository.findByBranchIdAndDayOfWeekAndActiveTrue(1L, testDate.getDayOfWeek()))
+        when(userRepository.findById(2L)).thenReturn(Optional.of(doctor));
+        when(branchScheduleRepository.findByDoctorIdAndDayOfWeekAndActiveTrue(2L, testDate.getDayOfWeek()))
                 .thenReturn(Optional.of(schedule));
         when(branchBlockedSlotRepository.findByBranchIdAndActiveTrueAndStartDateTimeLessThanAndEndDateTimeGreaterThan(
                 anyLong(), any(), any())).thenReturn(List.of());
-        when(appointmentRepository.findByBranchIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThan(
+        when(appointmentRepository.findByDoctorIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThan(
                 anyLong(), anyList(), any(), any())).thenReturn(List.of(conflictingAppointment));
 
         assertThrows(IllegalArgumentException.class, () -> appointmentService.createAppointment(dto));
@@ -249,12 +276,12 @@ class AppointmentServiceImplTest {
                 .build();
 
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appointment));
-        when(branchScheduleRepository.findByBranchIdAndDayOfWeekAndActiveTrue(1L, testDate.getDayOfWeek()))
+        when(branchScheduleRepository.findByDoctorIdAndDayOfWeekAndActiveTrue(2L, testDate.getDayOfWeek()))
                 .thenReturn(Optional.of(schedule));
         when(branchBlockedSlotRepository.findByBranchIdAndActiveTrueAndStartDateTimeLessThanAndEndDateTimeGreaterThan(
                 anyLong(), any(), any())).thenReturn(List.of());
-        when(appointmentRepository.findByBranchIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThan(
-                anyLong(), anyList(), any(), any())).thenReturn(List.of());
+        when(appointmentRepository.findByDoctorIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThanAndIdNot(
+                anyLong(), anyList(), any(), any(), anyLong())).thenReturn(List.of());
         when(appointmentRepository.save(any())).thenReturn(appointment);
         when(appointmentMapper.toResponseDto(any())).thenReturn(AppointmentResponseDto.builder().id(1L).build());
 

@@ -45,10 +45,10 @@ INSERT INTO crm_contacts (id, company_id, branch_id, full_name, phone, email, so
 -- =====================================================
 -- 6. CONTACT PHONES
 -- =====================================================
-INSERT INTO crm_contact_phones (id, contact_id, raw_phone, normalized_phone, company_id, created_at) VALUES (1, 1, '+593987654322', '+593987654322', 1, CURRENT_TIMESTAMP);
-INSERT INTO crm_contact_phones (id, contact_id, raw_phone, normalized_phone, company_id, created_at) VALUES (2, 2, '+593988765432', '+593988765432', 1, CURRENT_TIMESTAMP);
-INSERT INTO crm_contact_phones (id, contact_id, raw_phone, normalized_phone, company_id, created_at) VALUES (3, 3, '+573001234568', '+573001234568', 2, CURRENT_TIMESTAMP);
-INSERT INTO crm_contact_phones (id, contact_id, raw_phone, normalized_phone, company_id, created_at) VALUES (4, 4, '+573002345679', '+573002345679', 2, CURRENT_TIMESTAMP);
+INSERT INTO crm_contact_phones (id, contact_id, raw_phone, normalized_phone, company_id, created_at, updated_at) VALUES (1, 1, '+593987654322', '+593987654322', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO crm_contact_phones (id, contact_id, raw_phone, normalized_phone, company_id, created_at, updated_at) VALUES (2, 2, '+593988765432', '+593988765432', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO crm_contact_phones (id, contact_id, raw_phone, normalized_phone, company_id, created_at, updated_at) VALUES (3, 3, '+573001234568', '+573001234568', 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO crm_contact_phones (id, contact_id, raw_phone, normalized_phone, company_id, created_at, updated_at) VALUES (4, 4, '+573002345679', '+573002345679', 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
 -- =====================================================
 -- 6.5 CHANNEL USER LINKS
@@ -72,11 +72,11 @@ INSERT INTO crm_conversations (id, contact_id, channel_connection_id, assigned_u
 -- =====================================================
 -- 8. CRM MESSAGES
 -- =====================================================
-INSERT INTO crm_messages (id, conversation_id, direction, channel_type, message_type, status, external_message_id, content, sent_by_user_id, created_at) VALUES (1, 1, 'INBOUND', 'WHATSAPP', 'TEXT', 'RECEIVED', 'msg_ext_001', 'Hola, necesito información sobre servicios dentales', NULL, CURRENT_TIMESTAMP);
-INSERT INTO crm_messages (id, conversation_id, direction, channel_type, message_type, status, external_message_id, content, sent_by_user_id, created_at) VALUES (2, 1, 'OUTBOUND', 'WHATSAPP', 'TEXT', 'DELIVERED', 'msg_ext_002', 'Bienvenido, estamos listos para asistirte. ¿Cuál es tu consulta específica?', 2, CURRENT_TIMESTAMP);
-INSERT INTO crm_messages (id, conversation_id, direction, channel_type, message_type, status, external_message_id, content, sent_by_user_id, created_at) VALUES (3, 2, 'INBOUND', 'TELEGRAM', 'TEXT', 'RECEIVED', 'msg_ext_003', '¿Cuál es el horario de atención?', NULL, CURRENT_TIMESTAMP);
-INSERT INTO crm_messages (id, conversation_id, direction, channel_type, message_type, status, external_message_id, content, sent_by_user_id, created_at) VALUES (4, 3, 'INBOUND', 'WHATSAPP', 'TEXT', 'RECEIVED', 'msg_ext_004', 'Quisiera agendar una cita', NULL, CURRENT_TIMESTAMP);
-INSERT INTO crm_messages (id, conversation_id, direction, channel_type, message_type, status, external_message_id, content, sent_by_user_id, created_at) VALUES (5, 4, 'OUTBOUND', 'WHATSAPP', 'TEXT', 'DELIVERED', 'msg_ext_005', 'Gracias por contactarnos. Un asesor se pondrá en contacto pronto.', 4, CURRENT_TIMESTAMP);
+INSERT INTO crm_messages (id, conversation_id, direction, channel_type, message_type, status, external_message_id, content, sent_by_user_id, created_at, updated_at) VALUES (1, 1, 'INBOUND', 'WHATSAPP', 'TEXT', 'RECEIVED', 'msg_ext_001', 'Hola, necesito información sobre servicios dentales', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO crm_messages (id, conversation_id, direction, channel_type, message_type, status, external_message_id, content, sent_by_user_id, created_at, updated_at) VALUES (2, 1, 'OUTBOUND', 'WHATSAPP', 'TEXT', 'DELIVERED', 'msg_ext_002', 'Bienvenido, estamos listos para asistirte. ¿Cuál es tu consulta específica?', 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO crm_messages (id, conversation_id, direction, channel_type, message_type, status, external_message_id, content, sent_by_user_id, created_at, updated_at) VALUES (3, 2, 'INBOUND', 'TELEGRAM', 'TEXT', 'RECEIVED', 'msg_ext_003', '¿Cuál es el horario de atención?', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO crm_messages (id, conversation_id, direction, channel_type, message_type, status, external_message_id, content, sent_by_user_id, created_at, updated_at) VALUES (4, 3, 'INBOUND', 'WHATSAPP', 'TEXT', 'RECEIVED', 'msg_ext_004', 'Quisiera agendar una cita', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO crm_messages (id, conversation_id, direction, channel_type, message_type, status, external_message_id, content, sent_by_user_id, created_at, updated_at) VALUES (5, 4, 'OUTBOUND', 'WHATSAPP', 'TEXT', 'DELIVERED', 'msg_ext_005', 'Gracias por contactarnos. Un asesor se pondrá en contacto pronto.', 4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
 -- =====================================================
 -- 9. RESET IDENTITY COUNTERS

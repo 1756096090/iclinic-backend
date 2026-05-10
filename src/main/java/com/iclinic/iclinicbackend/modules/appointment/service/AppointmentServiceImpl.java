@@ -14,7 +14,10 @@ import com.iclinic.iclinicbackend.modules.company.entity.Company;
 import com.iclinic.iclinicbackend.modules.company.repository.CompanyRepository;
 import com.iclinic.iclinicbackend.modules.crm.contact.entity.CrmContact;
 import com.iclinic.iclinicbackend.modules.crm.contact.repository.CrmContactRepository;
+import com.iclinic.iclinicbackend.modules.user.entity.User;
+import com.iclinic.iclinicbackend.modules.user.repository.UserRepository;
 import com.iclinic.iclinicbackend.shared.enums.AppointmentStatus;
+import com.iclinic.iclinicbackend.shared.enums.UserRole;
 import com.iclinic.iclinicbackend.shared.exception.BranchNotFoundException;
 import com.iclinic.iclinicbackend.shared.exception.CompanyNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -42,17 +45,20 @@ public class AppointmentServiceImpl implements AppointmentService {
     private final BranchRepository branchRepository;
     private final CompanyRepository companyRepository;
     private final CrmContactRepository crmContactRepository;
+    private final UserRepository userRepository;
     private final AppointmentMapper appointmentMapper;
 
     @Override
     @Transactional(readOnly = true)
-    public List<AvailableSlotDto> getAvailableSlots(Long branchId, LocalDate date) {
-        log.info("Calculating available slots for branch={} date={}", branchId, date);
+    public List<AvailableSlotDto> getAvailableSlots(Long branchId, Long doctorId, LocalDate date) {
+        log.info("Calculating available slots for branch={} doctor={} date={}", branchId, doctorId, date);
         Branch branch = loadBranch(branchId);
+        User doctor = loadDoctor(doctorId);
+        validateDoctorBelongsToBranch(doctor, branch);
 
         DayOfWeek dayOfWeek = date.getDayOfWeek();
         BranchSchedule schedule = branchScheduleRepository
-                .findByBranchIdAndDayOfWeekAndActiveTrue(branch.getId(), dayOfWeek)
+                .findByDoctorIdAndDayOfWeekAndActiveTrue(doctor.getId(), dayOfWeek)
                 .orElse(null);
 
         if (schedule == null) {
@@ -69,8 +75,8 @@ public class AppointmentServiceImpl implements AppointmentService {
                         );
 
         List<Appointment> appointments =
-                appointmentRepository.findByBranchIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThan(
-                        branchId,
+                appointmentRepository.findByDoctorIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThan(
+                        doctorId,
                         OCCUPYING_STATUSES,
                         dayEnd,
                         dayStart
@@ -85,7 +91,7 @@ public class AppointmentServiceImpl implements AppointmentService {
             LocalDateTime slotEnd = current.plusMinutes(slotDuration);
 
             boolean blocked = overlapsBlockedSlot(slotStart, slotEnd, blockedSlots);
-            boolean occupied = overlapsAppointment(slotStart, slotEnd, appointments, null);
+            boolean occupied = overlapsAppointment(slotStart, slotEnd, appointments);
 
             if (!blocked && !occupied) {
                 slots.add(AvailableSlotDto.builder()
@@ -110,18 +116,21 @@ public class AppointmentServiceImpl implements AppointmentService {
         Company company = loadCompany(dto.getCompanyId());
         Branch branch = loadBranch(dto.getBranchId());
         CrmContact contact = loadContact(dto.getContactId());
+        User doctor = loadDoctor(dto.getDoctorId());
 
         validateBranchBelongsToCompany(branch, company);
         validateContactBelongsToCompany(contact, company);
+        validateDoctorBelongsToBranch(doctor, branch);
 
-        validateTimeInsideSchedule(branch.getId(), dto.getScheduledStart(), dto.getScheduledEnd());
+        validateTimeInsideSchedule(doctor.getId(), dto.getScheduledStart(), dto.getScheduledEnd());
         validateNotBlocked(branch.getId(), dto.getScheduledStart(), dto.getScheduledEnd());
-        validateNoAppointmentOverlap(branch.getId(), dto.getScheduledStart(), dto.getScheduledEnd(), null);
+        validateNoAppointmentOverlap(doctor.getId(), dto.getScheduledStart(), dto.getScheduledEnd());
 
         Appointment appointment = Appointment.builder()
                 .company(company)
                 .branch(branch)
                 .contact(contact)
+                .doctor(doctor)
                 .scheduledStart(dto.getScheduledStart())
                 .scheduledEnd(dto.getScheduledEnd())
                 .status(AppointmentStatus.SCHEDULED)
@@ -149,23 +158,24 @@ public class AppointmentServiceImpl implements AppointmentService {
         }
 
         validateTimeInsideSchedule(
-                appointment.getBranch().getId(),
+                appointment.getDoctor().getId(),
                 dto.getScheduledStart(),
                 dto.getScheduledEnd()
         );
 
-        validateNotBlocked(
-                appointment.getBranch().getId(),
-                dto.getScheduledStart(),
-                dto.getScheduledEnd()
-        );
+        validateNotBlocked(appointment.getBranch().getId(), dto.getScheduledStart(), dto.getScheduledEnd());
 
-        validateNoAppointmentOverlap(
-                appointment.getBranch().getId(),
-                dto.getScheduledStart(),
-                dto.getScheduledEnd(),
-                appointment.getId()
-        );
+        if (!appointmentRepository
+                .findByDoctorIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThanAndIdNot(
+                        appointment.getDoctor().getId(),
+                        OCCUPYING_STATUSES,
+                        dto.getScheduledEnd(),
+                        dto.getScheduledStart(),
+                        appointment.getId()
+                )
+                .isEmpty()) {
+            throw new IllegalArgumentException("Ya existe una cita en ese horario para el doctor");
+        }
 
         appointment.setScheduledStart(dto.getScheduledStart());
         appointment.setScheduledEnd(dto.getScheduledEnd());
@@ -245,6 +255,17 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .orElseThrow(() -> new IllegalArgumentException("Contacto CRM no encontrado: " + contactId));
     }
 
+    private User loadDoctor(Long doctorId) {
+        User doctor = userRepository.findById(doctorId)
+                .orElseThrow(() -> new IllegalArgumentException("Doctor no encontrado: " + doctorId));
+
+        if (doctor.getRole() != UserRole.DENTIST) {
+            throw new IllegalArgumentException("El usuario seleccionado no es un doctor");
+        }
+
+        return doctor;
+    }
+
     private void validateBranchBelongsToCompany(Branch branch, Company company) {
         if (!branch.getCompany().getId().equals(company.getId())) {
             throw new IllegalArgumentException("La sucursal no pertenece a la empresa indicada");
@@ -257,6 +278,13 @@ public class AppointmentServiceImpl implements AppointmentService {
         }
     }
 
+    private void validateDoctorBelongsToBranch(User doctor, Branch branch) {
+        if (doctor.getBranch() == null || doctor.getBranch().getId() == null
+                || !doctor.getBranch().getId().equals(branch.getId())) {
+            throw new IllegalArgumentException("El doctor no pertenece a la sucursal indicada");
+        }
+    }
+
     private void validateDateRange(LocalDateTime start, LocalDateTime end) {
         if (start == null || end == null) {
             throw new IllegalArgumentException("La fecha/hora de inicio y fin son requeridas");
@@ -266,16 +294,16 @@ public class AppointmentServiceImpl implements AppointmentService {
         }
     }
 
-    private void validateTimeInsideSchedule(Long branchId, LocalDateTime start, LocalDateTime end) {
+    private void validateTimeInsideSchedule(Long doctorId, LocalDateTime start, LocalDateTime end) {
         if (!start.toLocalDate().equals(end.toLocalDate())) {
             throw new IllegalArgumentException("La cita debe estar dentro del mismo día");
         }
 
         DayOfWeek dayOfWeek = start.getDayOfWeek();
         BranchSchedule schedule = branchScheduleRepository
-                .findByBranchIdAndDayOfWeekAndActiveTrue(branchId, dayOfWeek)
+                .findByDoctorIdAndDayOfWeekAndActiveTrue(doctorId, dayOfWeek)
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "La sucursal no tiene horario activo para el día " + dayOfWeek));
+                        "El doctor no tiene horario activo para el día " + dayOfWeek));
 
         LocalDateTime scheduleStart = LocalDateTime.of(start.toLocalDate(), schedule.getStartTime());
         LocalDateTime scheduleEnd = LocalDateTime.of(start.toLocalDate(), schedule.getEndTime());
@@ -297,25 +325,17 @@ public class AppointmentServiceImpl implements AppointmentService {
         }
     }
 
-    private void validateNoAppointmentOverlap(
-            Long branchId,
-            LocalDateTime start,
-            LocalDateTime end,
-            Long ignoredAppointmentId
-    ) {
+    private void validateNoAppointmentOverlap(Long doctorId, LocalDateTime start, LocalDateTime end) {
         List<Appointment> overlapping =
-                appointmentRepository.findByBranchIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThan(
-                        branchId,
+                appointmentRepository.findByDoctorIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThan(
+                        doctorId,
                         OCCUPYING_STATUSES,
                         end,
                         start
                 );
 
-        boolean hasConflict = overlapping.stream()
-                .anyMatch(a -> ignoredAppointmentId == null || !a.getId().equals(ignoredAppointmentId));
-
-        if (hasConflict) {
-            throw new IllegalArgumentException("Ya existe una cita en ese horario para la sucursal");
+        if (!overlapping.isEmpty()) {
+            throw new IllegalArgumentException("Ya existe una cita en ese horario para el doctor");
         }
     }
 
@@ -332,11 +352,9 @@ public class AppointmentServiceImpl implements AppointmentService {
     private boolean overlapsAppointment(
             LocalDateTime start,
             LocalDateTime end,
-            List<Appointment> appointments,
-            Long ignoredAppointmentId
+            List<Appointment> appointments
     ) {
         return appointments.stream()
-                .filter(a -> ignoredAppointmentId == null || !a.getId().equals(ignoredAppointmentId))
                 .anyMatch(a -> start.isBefore(a.getScheduledEnd())
                         && end.isAfter(a.getScheduledStart()));
     }

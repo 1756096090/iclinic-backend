@@ -1,6 +1,7 @@
 package com.iclinic.iclinicbackend.modules.appointment.entity;
 
 import com.iclinic.iclinicbackend.modules.branch.entity.Branch;
+import com.iclinic.iclinicbackend.modules.user.entity.User;
 import com.iclinic.iclinicbackend.shared.entity.ActivableEntity;
 import jakarta.persistence.*;
 import lombok.*;
@@ -13,7 +14,7 @@ import java.time.LocalTime;
 @Table(
         name = "branch_schedules",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"branch_id", "day_of_week"})
+                @UniqueConstraint(columnNames = {"doctor_id", "day_of_week"})
         }
 )
 @Getter
@@ -26,6 +27,10 @@ public class BranchSchedule extends ActivableEntity {
         @ManyToOne(optional = false, fetch = FetchType.LAZY)
         @JoinColumn(name = "branch_id", nullable = false)
         private Branch branch;
+
+        @ManyToOne(optional = false, fetch = FetchType.LAZY)
+        @JoinColumn(name = "doctor_id", nullable = false)
+        private User doctor;
 
         @Enumerated(EnumType.STRING)
         @Column(name = "day_of_week", nullable = false, length = 20)

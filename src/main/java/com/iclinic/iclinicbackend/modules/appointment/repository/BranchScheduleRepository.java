@@ -7,9 +7,10 @@ import java.time.DayOfWeek;
 import java.util.List;
 import java.util.Optional;
 
+@SuppressWarnings("unused")
 public interface BranchScheduleRepository extends JpaRepository<BranchSchedule, Long> {
 
-    List<BranchSchedule> findByBranchIdAndActiveTrueOrderByDayOfWeekAsc(Long branchId);
+    List<BranchSchedule> findByDoctorIdAndActiveTrueOrderByDayOfWeekAsc(Long doctorId);
 
-    Optional<BranchSchedule> findByBranchIdAndDayOfWeekAndActiveTrue(Long branchId, DayOfWeek dayOfWeek);
+    Optional<BranchSchedule> findByDoctorIdAndDayOfWeekAndActiveTrue(Long doctorId, DayOfWeek dayOfWeek);
 }

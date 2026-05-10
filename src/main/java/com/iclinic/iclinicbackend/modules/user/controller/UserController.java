@@ -75,6 +75,27 @@ public class UserController {
         return ResponseEntity.ok(userService.findByBranchId(branchId));
     }
 
+    @GetMapping("/branch/{branchId}/doctors")
+    @Operation(summary = "Obtener doctores por sucursal", description = "Retorna solo usuarios activos con rol DENTIST de una sucursal")
+    @ApiResponse(responseCode = "200", description = "Lista retornada")
+    public ResponseEntity<List<UserResponseDto>> getDoctorsByBranch(@PathVariable Long branchId) {
+        return ResponseEntity.ok(userService.findDoctorsByBranchId(branchId));
+    }
+
+    @GetMapping("/search")
+    @Operation(
+            summary = "Buscar usuarios por sucursal y texto",
+            description = "Busca usuarios de una sucursal por coincidencia aproximada en nombre, apellido, email o teléfono"
+    )
+    @ApiResponse(responseCode = "200", description = "Lista retornada")
+    public ResponseEntity<List<UserResponseDto>> searchUsers(
+            @RequestParam Long branchId,
+            @RequestParam String query,
+            @RequestParam(defaultValue = "20") Integer limit
+    ) {
+        return ResponseEntity.ok(userService.searchByBranchIdAndText(branchId, query, limit));
+    }
+
     @PatchMapping("/{id}/deactivate")
     @Operation(summary = "Desactivar usuario", description = "Marca al usuario como inactivo sin eliminarlo")
     @ApiResponse(responseCode = "200", description = "Usuario desactivado")

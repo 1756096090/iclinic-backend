@@ -14,6 +14,8 @@ public class AppointmentResponseDto {
     private Long companyId;
     private Long branchId;
     private Long contactId;
+    private Long doctorId;
+    private String doctorName;
     private LocalDateTime scheduledStart;
     private LocalDateTime scheduledEnd;
     private AppointmentStatus status;

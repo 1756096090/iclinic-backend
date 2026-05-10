@@ -21,11 +21,12 @@ GET /api/v1/appointments/available-slots
 | Parámetro | Tipo | Requerido | Descripción | Ejemplo |
 |-----------|------|-----------|-------------|---------|
 | `branchId` | Long | ✅ Sí | ID de la sucursal | `1` |
+| `doctorId` | Long | ✅ Sí | ID del doctor | `2` |
 | `date` | String | ✅ Sí | Fecha (yyyy-MM-dd) | `2026-05-15` |
 
 **Request Example:**
 ```bash
-GET /api/v1/appointments/available-slots?branchId=1&date=2026-05-15
+GET /api/v1/appointments/available-slots?branchId=1&doctorId=2&date=2026-05-15
 ```
 
 **Response 200 OK:**
@@ -68,6 +69,7 @@ POST /api/v1/appointments
   "companyId": 1,
   "branchId": 1,
   "contactId": 1,
+  "doctorId": 2,
   "scheduledStart": "2026-05-15T10:00:00",
   "scheduledEnd": "2026-05-15T10:30:00",
   "notes": "Revisión dental general"
@@ -80,6 +82,7 @@ POST /api/v1/appointments
 | `companyId` | Long | ✅ Sí | Empresa existente | `1` |
 | `branchId` | Long | ✅ Sí | Sucursal existente | `1` |
 | `contactId` | Long | ✅ Sí | Contacto existente | `1` |
+| `doctorId` | Long | ✅ Sí | Doctor asignado | `2` |
 | `scheduledStart` | DateTime | ✅ Sí | Fecha futura | `2026-05-15T10:00:00` |
 | `scheduledEnd` | DateTime | ✅ Sí | > scheduledStart | `2026-05-15T10:30:00` |
 | `notes` | String | ❌ No | Max 500 chars | `"Revisión..."` |
@@ -395,7 +398,7 @@ GET /api/v1/appointments/{id}
 
 ### Obtener slots disponibles:
 ```bash
-curl -X GET "http://localhost:8080/api/v1/appointments/available-slots?branchId=1&date=2026-05-15"
+curl -X GET "http://localhost:8080/api/v1/appointments/available-slots?branchId=1&doctorId=2&date=2026-05-15"
 ```
 
 ### Crear cita:
@@ -406,6 +409,7 @@ curl -X POST "http://localhost:8080/api/v1/appointments" \
     "companyId": 1,
     "branchId": 1,
     "contactId": 1,
+    "doctorId": 2,
     "scheduledStart": "2026-05-15T10:00:00",
     "scheduledEnd": "2026-05-15T10:30:00",
     "notes": "Revisión dental"
