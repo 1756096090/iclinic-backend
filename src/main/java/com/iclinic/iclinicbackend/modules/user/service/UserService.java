@@ -14,6 +14,8 @@ public interface UserService {
     List<UserResponseDto> findByRole(UserRole role);
     List<UserResponseDto> findByCompanyId(Long companyId);
     List<UserResponseDto> findByBranchId(Long branchId);
+    List<UserResponseDto> findDoctorsByBranchId(Long branchId);
+    List<UserResponseDto> searchByBranchIdAndText(Long branchId, String query, Integer limit);
     UserResponseDto deactivate(Long id);
     void deleteById(Long id);
 }

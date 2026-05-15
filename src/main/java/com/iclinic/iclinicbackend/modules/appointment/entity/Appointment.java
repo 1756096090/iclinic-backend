@@ -3,6 +3,7 @@ package com.iclinic.iclinicbackend.modules.appointment.entity;
 import com.iclinic.iclinicbackend.modules.branch.entity.Branch;
 import com.iclinic.iclinicbackend.modules.company.entity.Company;
 import com.iclinic.iclinicbackend.modules.crm.contact.entity.CrmContact;
+import com.iclinic.iclinicbackend.modules.user.entity.User;
 import com.iclinic.iclinicbackend.shared.entity.BaseEntity;
 import com.iclinic.iclinicbackend.shared.enums.AppointmentStatus;
 import jakarta.persistence.*;
@@ -31,6 +32,10 @@ public class Appointment extends BaseEntity {
     @ManyToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "contact_id", nullable = false)
     private CrmContact contact;
+
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
+    @JoinColumn(name = "doctor_id", nullable = false)
+    private User doctor;
 
     @Column(name = "scheduled_start", nullable = false)
     private LocalDateTime scheduledStart;

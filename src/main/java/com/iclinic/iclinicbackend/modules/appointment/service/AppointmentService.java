@@ -8,7 +8,7 @@ import java.util.List;
 
 public interface AppointmentService {
 
-    List<AvailableSlotDto> getAvailableSlots(Long branchId, LocalDate date);
+    List<AvailableSlotDto> getAvailableSlots(Long branchId, Long doctorId, LocalDate date);
 
     AppointmentResponseDto createAppointment(CreateAppointmentRequestDto dto);
 

@@ -13,6 +13,10 @@ public class AppointmentMapper {
                 .companyId(appointment.getCompany().getId())
                 .branchId(appointment.getBranch().getId())
                 .contactId(appointment.getContact().getId())
+                .doctorId(appointment.getDoctor() != null ? appointment.getDoctor().getId() : null)
+                .doctorName(appointment.getDoctor() != null
+                        ? appointment.getDoctor().getFirstName() + " " + appointment.getDoctor().getLastName()
+                        : null)
                 .scheduledStart(appointment.getScheduledStart())
                 .scheduledEnd(appointment.getScheduledEnd())
                 .status(appointment.getStatus())

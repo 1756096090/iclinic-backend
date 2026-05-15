@@ -4,8 +4,6 @@ import com.iclinic.iclinicbackend.modules.appointment.dto.*;
 import com.iclinic.iclinicbackend.modules.appointment.service.AppointmentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -37,10 +35,13 @@ public class AppointmentController {
             @Parameter(description = "ID de la sucursal", required = true)
             @RequestParam Long branchId,
 
+            @Parameter(description = "ID del doctor", required = true)
+            @RequestParam Long doctorId,
+
             @Parameter(description = "Fecha (formato: yyyy-MM-dd)", required = true)
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
     ) {
-        return ResponseEntity.ok(appointmentService.getAvailableSlots(branchId, date));
+        return ResponseEntity.ok(appointmentService.getAvailableSlots(branchId, doctorId, date));
     }
 
     @PostMapping
