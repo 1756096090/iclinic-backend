@@ -45,3 +45,16 @@ dependencies {
 tasks.named('test') {
     useJUnitPlatform()
 }
+
+// Configure IDEA to handle long classpath
+idea {
+    module {
+        downloadJavadoc = true
+        downloadSources = true
+    }
+    project {
+        jdkName = '17'
+        languageLevel = '17'
+    }
+}
+
