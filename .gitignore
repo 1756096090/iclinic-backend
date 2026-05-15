@@ -48,6 +48,9 @@ server.log
 application-local.properties
 application-secret.properties
 *.p12
+secrets/
+firebase-service-account.json
+*.service-account.json
 *.jks
 *.keystore
 

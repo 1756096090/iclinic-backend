@@ -33,10 +33,10 @@ public abstract class User {
     @Column(nullable = false)
     private String lastName;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String email;
 
-    @Column(nullable = false)
+    @Column
     private String password;
 
     @Column(unique = true)
@@ -60,6 +60,15 @@ public abstract class User {
 
     @Column
     private LocalDateTime updatedAt;
+
+    @Column(unique = true)
+    private String externalAuthId;
+
+    @Column
+    private String authProvider;
+
+    @Column
+    private String photoUrl;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "company_id")

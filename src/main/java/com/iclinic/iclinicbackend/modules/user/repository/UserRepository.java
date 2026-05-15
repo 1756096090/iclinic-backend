@@ -10,7 +10,9 @@ import java.util.Optional;
 // Repositorio de usuarios
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
+    Optional<User> findByExternalAuthId(String externalAuthId);
     boolean existsByEmail(String email);
+    boolean existsByExternalAuthId(String externalAuthId);
     List<User> findByRole(UserRole role);
     List<User> findByCompanyId(Long companyId);
     List<User> findByBranchId(Long branchId);
