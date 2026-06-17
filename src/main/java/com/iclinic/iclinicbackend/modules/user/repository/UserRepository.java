@@ -39,5 +39,32 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Page<User> searchByBranchIdAndText(@Param("branchId") Long branchId,
                                        @Param("query") String query,
                                        Pageable pageable);
-}
 
+     // ═══════════════════════════════════════════════════════════
+     // SUPER_ADMIN Queries
+     // ═══════════════════════════════════════════════════════════
+
+     @Query("""
+             select u
+             from User u
+             where u.role = 'SUPER_ADMIN'
+               and u.active = true
+             """)
+     List<User> findActiveSuperAdmins();
+
+     @Query("""
+             select count(u) > 0
+             from User u
+             where u.role = 'SUPER_ADMIN'
+               and u.active = true
+             """)
+     boolean existsActiveSuperAdmin();
+
+     @Query("""
+             select u
+             from User u
+             where u.role = 'SUPER_ADMIN'
+             order by u.createdAt asc
+             """)
+     List<User> findAllSuperAdmins();
+}

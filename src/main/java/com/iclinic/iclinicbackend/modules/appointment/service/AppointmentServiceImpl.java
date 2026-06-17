@@ -47,6 +47,7 @@ public class AppointmentServiceImpl implements AppointmentService {
     private final CrmContactRepository crmContactRepository;
     private final UserRepository userRepository;
     private final AppointmentMapper appointmentMapper;
+    private final com.iclinic.iclinicbackend.modules.auth.service.CurrentUserService currentUserService;
 
     @Override
     @Transactional(readOnly = true)
@@ -112,6 +113,9 @@ public class AppointmentServiceImpl implements AppointmentService {
                 dto.getCompanyId(), dto.getBranchId(), dto.getContactId());
 
         validateDateRange(dto.getScheduledStart(), dto.getScheduledEnd());
+
+        // Multitenant: el usuario autenticado sólo puede crear citas en su propia empresa.
+        currentUserService.assertCanAccessCompany(dto.getCompanyId());
 
         Company company = loadCompany(dto.getCompanyId());
         Branch branch = loadBranch(dto.getBranchId());
@@ -216,7 +220,10 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Override
     @Transactional(readOnly = true)
     public List<AppointmentResponseDto> findByBranch(Long branchId) {
-        loadBranch(branchId);
+        Branch branch = loadBranch(branchId);
+        // Multitenant: no exponer citas de sucursales de otra empresa.
+        currentUserService.assertCanAccessCompany(
+                branch.getCompany() != null ? branch.getCompany().getId() : null);
         return appointmentRepository.findByBranchIdOrderByScheduledStartAsc(branchId).stream()
                 .map(appointmentMapper::toResponseDto)
                 .toList();

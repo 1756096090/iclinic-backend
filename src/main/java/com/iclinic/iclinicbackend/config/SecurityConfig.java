@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -53,23 +54,37 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(AbstractHttpConfigurer::disable)
             .authorizeHttpRequests(auth -> auth
+                // ── Públicos: no requieren autenticación ──
                 .requestMatchers("/api/v1/auth/firebase/sync").permitAll()
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers("/api/v1/crm/webhooks/**").permitAll()
-                .requestMatchers("/api/v1/admin/client-onboarding").permitAll()
-                .requestMatchers("/api/v1/admin/users/invite").permitAll()
-                .requestMatchers("/api/v1/external-doctor-access/**").permitAll()
-                .requestMatchers("/api/v1/external-doctor-access/my-patients",
-                                 "/api/v1/external-doctor-access/patients/**").permitAll()
-                .requestMatchers("/api/v1/companies/**").permitAll()
-                .requestMatchers("/api/v1/branches/**").permitAll()
-                .requestMatchers("/api/v1/users/**").permitAll()
-                .requestMatchers("/api/v1/crm/channels/**").permitAll()
-                .requestMatchers("/api/v1/crm/conversations/**").permitAll()
-                .requestMatchers("/api/v1/crm/messages/**").permitAll()
-                .requestMatchers("/api/v1/appointments/**").permitAll()
-                .anyRequest().permitAll()
+
+                // ── Requieren autenticación ──
+                .requestMatchers("/api/v1/auth/me").authenticated()
+
+                // ── Solo SUPER_ADMIN ──
+                .requestMatchers("/api/v1/admin/super-admins/**").hasRole("SUPER_ADMIN")
+                .requestMatchers("/api/v1/admin/client-onboarding").hasRole("SUPER_ADMIN")
+
+                // ── SUPER_ADMIN o ADMIN ──
+                .requestMatchers("/api/v1/admin/**").hasAnyRole("SUPER_ADMIN", "ADMIN")
+
+                // ── Gestión de usuarios: lectura para staff autenticado (el servicio
+                //    filtra por empresa), pero mutaciones sólo ADMIN/SUPER_ADMIN ──
+                .requestMatchers(HttpMethod.POST, "/api/v1/users/**").hasAnyRole("SUPER_ADMIN", "ADMIN")
+                .requestMatchers(HttpMethod.PUT, "/api/v1/users/**").hasAnyRole("SUPER_ADMIN", "ADMIN")
+                .requestMatchers(HttpMethod.PATCH, "/api/v1/users/**").hasAnyRole("SUPER_ADMIN", "ADMIN")
+                .requestMatchers(HttpMethod.DELETE, "/api/v1/users/**").hasAnyRole("SUPER_ADMIN", "ADMIN")
+
+                // ── Acceso de doctor externo ──
+                .requestMatchers("/api/v1/external-doctor-access/my-patients")
+                    .hasAnyRole("SUPER_ADMIN", "ADMIN", "DENTIST", "ASSISTANT", "RECEPTIONIST", "EXTERNAL_DOCTOR")
+                .requestMatchers("/api/v1/external-doctor-access/**")
+                    .hasAnyRole("SUPER_ADMIN", "ADMIN", "DENTIST")
+
+                // ── El resto requiere cualquier usuario autenticado ──
+                .anyRequest().authenticated()
             );
 
         // Add Firebase filter only if available

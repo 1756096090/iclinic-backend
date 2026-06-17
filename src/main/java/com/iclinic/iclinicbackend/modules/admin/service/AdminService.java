@@ -12,6 +12,8 @@ import com.iclinic.iclinicbackend.modules.company.repository.CompanyRepository;
 import com.iclinic.iclinicbackend.modules.user.entity.*;
 import com.iclinic.iclinicbackend.modules.user.repository.UserRepository;
 import com.iclinic.iclinicbackend.shared.enums.*;
+import com.iclinic.iclinicbackend.shared.exception.LastSuperAdminException;
+import com.iclinic.iclinicbackend.shared.exception.UnauthorizedSuperAdminOperationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -29,10 +31,7 @@ public class AdminService {
     private final CurrentUserService currentUserService;
 
     public ClientOnboardingResponseDto createClient(ClientOnboardingRequestDto dto) {
-        currentUserService.isSuperAdmin();
-        if (!currentUserService.isSuperAdmin()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo SUPER_ADMIN puede crear clientes");
-        }
+        currentUserService.assertSuperAdmin();
 
         Company company = buildCompany(dto.getCompany());
         company = companyRepository.save(company);
@@ -70,12 +69,15 @@ public class AdminService {
         if (currentRole != UserRole.SUPER_ADMIN && currentRole != UserRole.ADMIN) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Sin permiso para invitar usuarios");
         }
+        
+        // ADMIN no puede crear SUPER_ADMIN
         if (currentRole == UserRole.ADMIN) {
             if (dto.getRole() == UserRole.SUPER_ADMIN) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "ADMIN no puede crear SUPER_ADMIN");
+                throw new UnauthorizedSuperAdminOperationException("ADMIN no puede crear SUPER_ADMIN. Solo SUPER_ADMIN puede hacerlo.");
             }
             currentUserService.assertCanAccessCompany(dto.getCompanyId());
         }
+        
         if (userRepository.existsByEmail(dto.getEmail())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese email");
         }
@@ -87,6 +89,9 @@ public class AdminService {
                 ? branchRepository.findById(dto.getBranchId()).orElse(null)
                 : null;
 
+        // Integridad multitenant: la sucursal debe pertenecer a la empresa invitante.
+        currentUserService.assertBranchInCompany(branch, dto.getCompanyId());
+
         User user = buildUserFromInvite(dto);
         user.setCompany(company);
         user.setBranch(branch);
@@ -95,6 +100,36 @@ public class AdminService {
 
         return toAuthDto(user);
     }
+
+    public AuthUserResponseDto deactivateSuperAdmin(Long superAdminId) {
+        currentUserService.assertSuperAdmin();
+        User currentUser = currentUserService.getCurrentUser();
+
+        User targetUser = userRepository.findById(superAdminId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SUPER_ADMIN no encontrado"));
+
+        if (targetUser.getRole() != UserRole.SUPER_ADMIN) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El usuario no es un SUPER_ADMIN");
+        }
+
+        // SEGURIDAD: No permitir auto-desactivarse
+        if (currentUser.getId().equals(superAdminId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No puedes desactivarte a ti mismo");
+        }
+
+        // SEGURIDAD: Validar que haya al menos otro SUPER_ADMIN activo
+        long activeSuperAdminCount = userRepository.findActiveSuperAdmins().size();
+        if (activeSuperAdminCount <= 1) {
+            throw new LastSuperAdminException("No se puede desactivar el último SUPER_ADMIN del sistema");
+        }
+
+        targetUser.setActive(false);
+        userRepository.save(targetUser);
+
+        return toAuthDto(targetUser);
+    }
+
+    // ...existing code...
 
     private Company buildCompany(ClientOnboardingRequestDto.CompanyData data) {
         return switch (data.getCompanyType()) {

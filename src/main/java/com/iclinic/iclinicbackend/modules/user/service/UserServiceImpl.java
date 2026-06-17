@@ -1,5 +1,6 @@
 package com.iclinic.iclinicbackend.modules.user.service;
 
+import com.iclinic.iclinicbackend.modules.auth.service.CurrentUserService;
 import com.iclinic.iclinicbackend.modules.branch.entity.Branch;
 import com.iclinic.iclinicbackend.modules.branch.repository.BranchRepository;
 import com.iclinic.iclinicbackend.modules.company.entity.Company;
@@ -36,6 +37,7 @@ public class UserServiceImpl implements UserService {
     private final BranchRepository branchRepository;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final CurrentUserService currentUserService;
 
     @Override
     public UserResponseDto create(CreateUserRequestDto dto) {
@@ -49,6 +51,9 @@ public class UserServiceImpl implements UserService {
         applyCommonFields(user, dto);
         assignRelations(user, dto);
 
+        // Multitenant: el usuario actual sólo puede crear dentro de su empresa y no escalar rol.
+        currentUserService.assertCanManageUser(user);
+
         return userMapper.toResponseDto(userRepository.save(user));
     }
 
@@ -61,22 +66,35 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public List<UserResponseDto> findAll() {
-        return userRepository.findAll().stream()
-                .map(userMapper::toResponseDto)
-                .collect(Collectors.toList());
+        // Multitenant: SUPER_ADMIN ve todo; el resto sólo su propia empresa.
+        if (currentUserService.isSuperAdmin()) {
+            return userRepository.findAll().stream()
+                    .map(userMapper::toResponseDto)
+                    .collect(Collectors.toList());
+        }
+        Long companyId = currentUserService.getCurrentCompanyId();
+        if (companyId == null) {
+            return List.of();
+        }
+        return findByCompanyId(companyId);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<UserResponseDto> findByRole(UserRole role) {
-        return userRepository.findByRole(role).stream()
-                .map(userMapper::toResponseDto)
-                .collect(Collectors.toList());
+        var stream = userRepository.findByRole(role).stream();
+        if (!currentUserService.isSuperAdmin()) {
+            Long companyId = currentUserService.getCurrentCompanyId();
+            stream = stream.filter(u -> u.getCompany() != null
+                    && u.getCompany().getId().equals(companyId));
+        }
+        return stream.map(userMapper::toResponseDto).collect(Collectors.toList());
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<UserResponseDto> findByCompanyId(Long companyId) {
+        currentUserService.assertCanAccessCompany(companyId);
         return userRepository.findByCompanyId(companyId).stream()
                 .map(userMapper::toResponseDto)
                 .collect(Collectors.toList());
@@ -85,6 +103,7 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public List<UserResponseDto> findByBranchId(Long branchId) {
+        assertCanAccessBranchTenant(branchId);
         return userRepository.findByBranchId(branchId).stream()
                 .map(userMapper::toResponseDto)
                 .collect(Collectors.toList());
@@ -93,6 +112,7 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public List<UserResponseDto> findDoctorsByBranchId(Long branchId) {
+        assertCanAccessBranchTenant(branchId);
         return userRepository.findByBranchIdAndRoleAndActiveTrueOrderByFirstNameAsc(branchId, UserRole.DENTIST).stream()
                 .map(userMapper::toResponseDto)
                 .collect(Collectors.toList());
@@ -101,6 +121,7 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public List<UserResponseDto> searchByBranchIdAndText(Long branchId, String query, Integer limit) {
+        assertCanAccessBranchTenant(branchId);
         int safeLimit = normalizeLimit(limit);
         String safeQuery = query == null ? "" : query.trim();
 
@@ -120,13 +141,16 @@ public class UserServiceImpl implements UserService {
     @Override
     public UserResponseDto deactivate(Long id) {
         User user = loadUser(id);
+        currentUserService.assertCanManageUser(user);
         user.setActive(false);
         return userMapper.toResponseDto(userRepository.save(user));
     }
 
     @Override
     public void deleteById(Long id) {
-        userRepository.delete(loadUser(id));
+        User user = loadUser(id);
+        currentUserService.assertCanManageUser(user);
+        userRepository.delete(user);
     }
 
     private User loadUser(Long id) {
@@ -179,16 +203,31 @@ public class UserServiceImpl implements UserService {
     }
 
     private void assignRelations(User user, CreateUserRequestDto dto) {
+        Company company = null;
         if (dto.getCompanyId() != null) {
-            Company company = companyRepository.findById(dto.getCompanyId())
+            company = companyRepository.findById(dto.getCompanyId())
                     .orElseThrow(() -> new CompanyNotFoundException(dto.getCompanyId()));
             user.setCompany(company);
         }
         if (dto.getBranchId() != null) {
             Branch branch = branchRepository.findById(dto.getBranchId())
                     .orElseThrow(() -> new BranchNotFoundException(dto.getBranchId()));
+            // Integridad multitenant: la sucursal debe pertenecer a la empresa indicada.
+            currentUserService.assertBranchInCompany(branch, dto.getCompanyId());
             user.setBranch(branch);
         }
+    }
+
+    /**
+     * Verifica que el usuario actual pueda acceder a la sucursal, validando además
+     * que la sucursal pertenezca a su empresa (no sólo coincidencia de branchId).
+     */
+    private void assertCanAccessBranchTenant(Long branchId) {
+        if (currentUserService.isSuperAdmin()) return;
+        Branch branch = branchRepository.findById(branchId)
+                .orElseThrow(() -> new BranchNotFoundException(branchId));
+        Long companyId = branch.getCompany() != null ? branch.getCompany().getId() : null;
+        currentUserService.assertCanAccessCompany(companyId);
     }
 
     private int normalizeLimit(Integer limit) {

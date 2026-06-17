@@ -7,6 +7,7 @@ import com.iclinic.iclinicbackend.modules.auth.dto.AuthUserResponseDto;
 import com.iclinic.iclinicbackend.modules.user.entity.EcuadorianUser;
 import com.iclinic.iclinicbackend.modules.user.entity.User;
 import com.iclinic.iclinicbackend.modules.user.repository.UserRepository;
+import com.iclinic.iclinicbackend.shared.enums.DocumentType;
 import com.iclinic.iclinicbackend.shared.enums.UserRole;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -39,9 +40,17 @@ public class FirebaseAuthSyncService {
             Optional<User> existingByEmail = userRepository.findByEmail(email);
             if (existingByEmail.isPresent()) {
                 user = existingByEmail.get();
-                user.setExternalAuthId(uid);
-                user.setAuthProvider(FIREBASE_PROVIDER);
+                // SEGURIDAD: No permitir cambiar rol de SUPER_ADMIN vía Firebase sync
+                if (user.getRole() == com.iclinic.iclinicbackend.shared.enums.UserRole.SUPER_ADMIN) {
+                    // Solo asociar authId, NO cambiar nada más
+                    user.setExternalAuthId(uid);
+                    user.setAuthProvider(FIREBASE_PROVIDER);
+                } else {
+                    user.setExternalAuthId(uid);
+                    user.setAuthProvider(FIREBASE_PROVIDER);
+                }
             } else {
+                // Crear usuario temporal como PATIENT (no SUPER_ADMIN jamás)
                 user = createTemporaryUser(uid, email, name, picture);
             }
         }
@@ -58,6 +67,10 @@ public class FirebaseAuthSyncService {
                 .firstName(nameParts[0])
                 .lastName(nameParts[1])
                 .email(email)
+                // Rol no privilegiado por defecto; `role` es NOT NULL. Nunca SUPER_ADMIN/ADMIN.
+                // El usuario queda inactivo hasta que un admin lo asigne a una empresa/rol real.
+                .role(UserRole.PATIENT)
+                .documentType(DocumentType.PASSPORT)
                 .password(null)
                 .externalAuthId(uid)
                 .authProvider(FIREBASE_PROVIDER)

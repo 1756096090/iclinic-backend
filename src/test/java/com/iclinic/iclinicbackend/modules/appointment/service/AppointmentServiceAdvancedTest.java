@@ -66,6 +66,9 @@ class AppointmentServiceAdvancedTest {
     @Mock
     private AppointmentMapper appointmentMapper;
 
+    @Mock
+    private com.iclinic.iclinicbackend.modules.auth.service.CurrentUserService currentUserService;
+
     @InjectMocks
     private AppointmentServiceImpl appointmentService;
 

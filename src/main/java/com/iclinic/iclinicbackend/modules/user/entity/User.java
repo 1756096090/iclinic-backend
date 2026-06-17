@@ -33,7 +33,7 @@ public abstract class User {
     @Column(nullable = false)
     private String lastName;
 
-    @Column(nullable = false)
+    @Column(nullable = false, unique = true)
     private String email;
 
     @Column
@@ -53,6 +53,15 @@ public abstract class User {
     @Column(nullable = false)
     @Builder.Default
     private Boolean active = true;
+
+    /**
+     * SUPER_ADMIN global de plataforma (sin empresa). Modelo SaaS objetivo: la pertenencia
+     * a empresas vive en {@code company_memberships}; este flag identifica al admin global.
+     * Nullable de forma transitoria para no romper el seed legacy (null == false).
+     */
+    @Column
+    @Builder.Default
+    private Boolean isPlatformAdmin = false;
 
     @Column(nullable = false, updatable = false)
     @Builder.Default

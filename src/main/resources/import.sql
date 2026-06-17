@@ -32,7 +32,7 @@ INSERT INTO users (id, first_name, last_name, email, password, phone, role, docu
 -- =====================================================
 INSERT INTO crm_channel_connections (id, company_id, branch_id, channel_type, provider, external_account_id, external_phone_number_id, access_token_encrypted, webhook_verify_token, webhook_registered_url, status, created_at) VALUES (1, 1, 1, 'WHATSAPP', 'META', 'wabiz_ecuador_123', '1234567890123', '{plain}encrypted_token_ec_1', 'verify_token_ec_001', NULL, 'VERIFIED', CURRENT_TIMESTAMP);
 INSERT INTO crm_channel_connections (id, company_id, branch_id, channel_type, provider, external_account_id, external_phone_number_id, access_token_encrypted, webhook_verify_token, webhook_registered_url, status, created_at) VALUES (2, 2, 3, 'WHATSAPP', 'META', 'wabiz_colombia_456', '9876543210987', '{plain}encrypted_token_co_1', 'verify_token_co_001', NULL, 'VERIFIED', CURRENT_TIMESTAMP);
-INSERT INTO crm_channel_connections (id, company_id, branch_id, channel_type, provider, external_account_id, external_phone_number_id, access_token_encrypted, webhook_verify_token, webhook_registered_url, status, created_at) VALUES (3, 1, 1, 'TELEGRAM', 'TELEGRAM', '@Jenkins1234bot', NULL, '{plain}8488844160:AAGHTthIc034kD2_6H2IErpEjMwzVcPzRJ4', NULL, NULL, 'ACTIVE', CURRENT_TIMESTAMP);
+INSERT INTO crm_channel_connections (id, company_id, branch_id, channel_type, provider, external_account_id, external_phone_number_id, access_token_encrypted, webhook_verify_token, webhook_registered_url, status, created_at) VALUES (3, 1, 1, 'TELEGRAM', 'TELEGRAM', '@SEED_BOT_PLACEHOLDER', NULL, '{plain}SEED_PLACEHOLDER_TOKEN', NULL, NULL, 'ACTIVE', CURRENT_TIMESTAMP);
 
 -- =====================================================
 -- 5. CRM CONTACTS
@@ -79,7 +79,23 @@ INSERT INTO crm_messages (id, conversation_id, direction, channel_type, message_
 INSERT INTO crm_messages (id, conversation_id, direction, channel_type, message_type, status, external_message_id, content, sent_by_user_id, created_at, updated_at) VALUES (5, 4, 'OUTBOUND', 'WHATSAPP', 'TEXT', 'DELIVERED', 'msg_ext_005', 'Gracias por contactarnos. Un asesor se pondrá en contacto pronto.', 4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
 -- =====================================================
--- 9. RESET IDENTITY COUNTERS
+-- 9. BRANCH SCHEDULES (Horarios de trabajo de doctores)
+-- Dra. María (ID 2) en sucursal 1 → Lunes-Viernes: 09:00-17:00, 30min slots
+-- Dr. Pedro (ID 4) en sucursal 3 → Lunes-Viernes: 10:00-18:00, 30min slots
+-- =====================================================
+INSERT INTO branch_schedules (id, branch_id, doctor_id, day_of_week, start_time, end_time, slot_duration_minutes, active, created_at, updated_at) VALUES (1, 1, 2, 'MONDAY', '09:00', '17:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO branch_schedules (id, branch_id, doctor_id, day_of_week, start_time, end_time, slot_duration_minutes, active, created_at, updated_at) VALUES (2, 1, 2, 'TUESDAY', '09:00', '17:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO branch_schedules (id, branch_id, doctor_id, day_of_week, start_time, end_time, slot_duration_minutes, active, created_at, updated_at) VALUES (3, 1, 2, 'WEDNESDAY', '09:00', '17:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO branch_schedules (id, branch_id, doctor_id, day_of_week, start_time, end_time, slot_duration_minutes, active, created_at, updated_at) VALUES (4, 1, 2, 'THURSDAY', '09:00', '17:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO branch_schedules (id, branch_id, doctor_id, day_of_week, start_time, end_time, slot_duration_minutes, active, created_at, updated_at) VALUES (5, 1, 2, 'FRIDAY', '09:00', '17:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO branch_schedules (id, branch_id, doctor_id, day_of_week, start_time, end_time, slot_duration_minutes, active, created_at, updated_at) VALUES (6, 3, 4, 'MONDAY', '10:00', '18:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO branch_schedules (id, branch_id, doctor_id, day_of_week, start_time, end_time, slot_duration_minutes, active, created_at, updated_at) VALUES (7, 3, 4, 'TUESDAY', '10:00', '18:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO branch_schedules (id, branch_id, doctor_id, day_of_week, start_time, end_time, slot_duration_minutes, active, created_at, updated_at) VALUES (8, 3, 4, 'WEDNESDAY', '10:00', '18:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO branch_schedules (id, branch_id, doctor_id, day_of_week, start_time, end_time, slot_duration_minutes, active, created_at, updated_at) VALUES (9, 3, 4, 'THURSDAY', '10:00', '18:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO branch_schedules (id, branch_id, doctor_id, day_of_week, start_time, end_time, slot_duration_minutes, active, created_at, updated_at) VALUES (10, 3, 4, 'FRIDAY', '10:00', '18:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+-- =====================================================
+-- 10. RESET IDENTITY COUNTERS
 -- Necesario en H2 cuando se insertan filas con IDs explícitos
 -- =====================================================
 ALTER TABLE companies ALTER COLUMN id RESTART WITH 3;
@@ -91,4 +107,5 @@ ALTER TABLE crm_contact_phones ALTER COLUMN id RESTART WITH 5;
 ALTER TABLE crm_channel_user_links ALTER COLUMN id RESTART WITH 4;
 ALTER TABLE crm_conversations ALTER COLUMN id RESTART WITH 5;
 ALTER TABLE crm_messages ALTER COLUMN id RESTART WITH 6;
+ALTER TABLE branch_schedules ALTER COLUMN id RESTART WITH 11;
 

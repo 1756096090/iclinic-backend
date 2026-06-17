@@ -1,5 +1,7 @@
 package com.iclinic.iclinicbackend.modules.auth.service;
 
+import com.iclinic.iclinicbackend.modules.branch.entity.Branch;
+import com.iclinic.iclinicbackend.modules.company.entity.Company;
 import com.iclinic.iclinicbackend.modules.user.entity.User;
 import com.iclinic.iclinicbackend.modules.user.repository.UserRepository;
 import com.iclinic.iclinicbackend.shared.enums.UserRole;
@@ -68,6 +70,44 @@ public class CurrentUserService {
             return;
         }
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Sin permiso para gestionar usuarios");
+    }
+
+    public void assertSuperAdmin() {
+        if (!isSuperAdmin()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo SUPER_ADMIN puede ejecutar esta acción");
+        }
+    }
+
+    public boolean canAccessCompany(Long companyId) {
+        User user = getCurrentUser();
+        if (user.getRole() == UserRole.SUPER_ADMIN) return true;
+        return user.getCompany() != null && user.getCompany().getId().equals(companyId);
+    }
+
+    public boolean canAccessBranch(Long branchId) {
+        User user = getCurrentUser();
+        if (user.getRole() == UserRole.SUPER_ADMIN) return true;
+        return user.getBranch() != null && user.getBranch().getId().equals(branchId);
+    }
+
+    /**
+     * Empresa del usuario autenticado. Null para SUPER_ADMIN global (sin empresa).
+     */
+    public Long getCurrentCompanyId() {
+        Company company = getCurrentUser().getCompany();
+        return company != null ? company.getId() : null;
+    }
+
+    /**
+     * Garantiza que una sucursal pertenezca a la empresa indicada.
+     * Regla multitenant: un usuario nunca puede asignarse/operar una sucursal de otra empresa.
+     */
+    public void assertBranchInCompany(Branch branch, Long companyId) {
+        if (branch == null || companyId == null) return;
+        if (branch.getCompany() == null || !branch.getCompany().getId().equals(companyId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "La sucursal no pertenece a la empresa indicada");
+        }
     }
 
     public void assertCanAccessPatient(Long patientId) {
