@@ -53,8 +53,8 @@ class ConversationControllerTest {
     @Test
     @DisplayName("Should get all conversations")
     void testGetAllConversations() throws Exception {
-        List<ConversationResponseDto> conversations = List.of(conversationDto);
-        when(conversationService.findAll()).thenReturn(null); // Note: may need to adjust based on actual API
+        // El controller hace findAll().stream()...; debe devolver una lista (de entidades), no null.
+        when(conversationService.findAll()).thenReturn(java.util.Collections.emptyList());
 
         mockMvc.perform(get("/api/v1/crm/conversations")
                 .contentType(MediaType.APPLICATION_JSON))

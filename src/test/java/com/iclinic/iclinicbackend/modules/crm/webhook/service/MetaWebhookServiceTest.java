@@ -93,14 +93,19 @@ class MetaWebhookServiceTest {
     }
 
     @Test
-    @DisplayName("Should handle missing channel gracefully")
+    @DisplayName("Should throw when channel is missing")
+    // NOTA DE COMPORTAMIENTO: hoy el servicio lanza ChannelConnectionNotFoundException ante un
+    // phone_number_id desconocido, lo que devuelve 500 a Meta y provoca reintentos. Se documenta
+    // el comportamiento actual; evaluar si conviene ignorar silenciosamente (log + 200) los webhooks
+    // de canales no registrados.
     void testHandleMissingChannel() {
         when(channelConnectionRepository.findByExternalPhoneNumberIdAndChannelTypeAndStatusInWithCompany(
                 "999999999", ChannelType.WHATSAPP, Set.of(ChannelConnectionStatus.ACTIVE, ChannelConnectionStatus.VERIFIED)))
                 .thenReturn(Optional.empty());
 
-        // Should handle gracefully without throwing
-        assertDoesNotThrow(() -> metaWebhookService.processIncomingPayload("""
+        assertThrows(
+                com.iclinic.iclinicbackend.modules.crm.exception.ChannelConnectionNotFoundException.class,
+                () -> metaWebhookService.processIncomingPayload("""
                 {
                   "entry": [{
                     "changes": [{
