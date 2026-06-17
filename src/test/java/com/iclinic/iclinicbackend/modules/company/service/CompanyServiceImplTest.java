@@ -8,6 +8,8 @@ import com.iclinic.iclinicbackend.modules.company.mapper.CompanyMapper;
 import com.iclinic.iclinicbackend.modules.company.repository.ColombianCompanyRepository;
 import com.iclinic.iclinicbackend.modules.company.repository.CompanyRepository;
 import com.iclinic.iclinicbackend.modules.company.repository.EcuadorianCompanyRepository;
+import com.iclinic.iclinicbackend.modules.company.strategy.CompanyCreationStrategy;
+import com.iclinic.iclinicbackend.modules.company.strategy.CompanyCreationStrategyRegistry;
 import com.iclinic.iclinicbackend.shared.exception.CompanyNotFoundException;
 import com.iclinic.iclinicbackend.shared.exception.DuplicateCompanyException;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +43,12 @@ class CompanyServiceImplTest {
 
     @Mock
     private CompanyMapper companyMapper;
+
+    @Mock
+    private CompanyCreationStrategyRegistry strategyRegistry;
+
+    @Mock
+    private CompanyCreationStrategy companyCreationStrategy;
 
     @InjectMocks
     private CompanyServiceImpl companyService;
@@ -82,8 +90,9 @@ class CompanyServiceImplTest {
     @Test
     @DisplayName("shouldCreateEcuadorianCompanySuccessfully")
     void testCreateEcuadorianCompanySuccessfully() {
-        // Arrange
-        when(ecuadorianCompanyRepository.findByRuc(ecuadorianRequestDto.getRuc())).thenReturn(Optional.empty());
+        // Arrange: la creación delega en la estrategia ECUADORIAN
+        when(strategyRegistry.getStrategy("ECUADORIAN")).thenReturn(companyCreationStrategy);
+        when(companyCreationStrategy.createCompany(any())).thenReturn(ecuadorianCompany);
         when(companyRepository.save(any(EcuadorianCompany.class))).thenReturn(ecuadorianCompany);
         when(companyMapper.toEcuadorianResponseDto(ecuadorianCompany)).thenReturn(null);
 
@@ -91,7 +100,7 @@ class CompanyServiceImplTest {
         companyService.createEcuadorianCompany(ecuadorianRequestDto);
 
         // Assert
-        verify(ecuadorianCompanyRepository, times(1)).findByRuc(ecuadorianRequestDto.getRuc());
+        verify(companyCreationStrategy, times(1)).validateUniqueTaxId(ecuadorianRequestDto.getRuc());
         verify(companyRepository, times(1)).save(any(EcuadorianCompany.class));
         verify(companyMapper, times(1)).toEcuadorianResponseDto(ecuadorianCompany);
     }
@@ -99,8 +108,10 @@ class CompanyServiceImplTest {
     @Test
     @DisplayName("shouldThrowDuplicateExceptionWhenRucExists")
     void testThrowDuplicateExceptionWhenRucExists() {
-        // Arrange
-        when(ecuadorianCompanyRepository.findByRuc(ecuadorianRequestDto.getRuc())).thenReturn(Optional.of(ecuadorianCompany));
+        // Arrange: la estrategia detecta el taxId duplicado
+        when(strategyRegistry.getStrategy("ECUADORIAN")).thenReturn(companyCreationStrategy);
+        doThrow(new DuplicateCompanyException("RUC duplicado"))
+                .when(companyCreationStrategy).validateUniqueTaxId(ecuadorianRequestDto.getRuc());
 
         // Act & Assert
         assertThrows(DuplicateCompanyException.class, () ->
@@ -113,7 +124,8 @@ class CompanyServiceImplTest {
     @DisplayName("shouldCreateColombianCompanySuccessfully")
     void testCreateColombianCompanySuccessfully() {
         // Arrange
-        when(colombianCompanyRepository.findByNit(colombianRequestDto.getNit())).thenReturn(Optional.empty());
+        when(strategyRegistry.getStrategy("COLOMBIAN")).thenReturn(companyCreationStrategy);
+        when(companyCreationStrategy.createCompany(any())).thenReturn(colombianCompany);
         when(companyRepository.save(any(ColombianCompany.class))).thenReturn(colombianCompany);
         when(companyMapper.toColombianResponseDto(colombianCompany)).thenReturn(null);
 
@@ -121,7 +133,7 @@ class CompanyServiceImplTest {
         companyService.createColombianCompany(colombianRequestDto);
 
         // Assert
-        verify(colombianCompanyRepository, times(1)).findByNit(colombianRequestDto.getNit());
+        verify(companyCreationStrategy, times(1)).validateUniqueTaxId(colombianRequestDto.getNit());
         verify(companyRepository, times(1)).save(any(ColombianCompany.class));
         verify(companyMapper, times(1)).toColombianResponseDto(colombianCompany);
     }
@@ -130,7 +142,9 @@ class CompanyServiceImplTest {
     @DisplayName("shouldThrowDuplicateExceptionWhenNitExists")
     void testThrowDuplicateExceptionWhenNitExists() {
         // Arrange
-        when(colombianCompanyRepository.findByNit(colombianRequestDto.getNit())).thenReturn(Optional.of(colombianCompany));
+        when(strategyRegistry.getStrategy("COLOMBIAN")).thenReturn(companyCreationStrategy);
+        doThrow(new DuplicateCompanyException("NIT duplicado"))
+                .when(companyCreationStrategy).validateUniqueTaxId(colombianRequestDto.getNit());
 
         // Act & Assert
         assertThrows(DuplicateCompanyException.class, () ->

@@ -28,6 +28,11 @@ class MetaWebhookServiceTest {
     @Mock private ChannelConnectionRepository channelConnectionRepository;
     @Mock private MessageService messageService;
 
+    // ObjectMapper real (no mock) para que readTree parsee el payload de prueba.
+    @org.mockito.Spy
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
     @InjectMocks
     private MetaWebhookServiceImpl metaWebhookService;
 

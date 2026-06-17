@@ -24,11 +24,13 @@ import static org.mockito.Mockito.when;
 class UserServiceImplSearchTest {
     @Mock private UserRepository userRepository;
     @Mock private UserMapper userMapper;
+    @Mock private com.iclinic.iclinicbackend.modules.auth.service.CurrentUserService currentUserService;
     @InjectMocks
     private UserServiceImpl userService;
     @Test
     @DisplayName("shouldSearchUsersByBranchAndTextUsingTrimmedQueryAndLimit")
     void shouldSearchUsersByBranchAndTextUsingTrimmedQueryAndLimit() {
+        when(currentUserService.isSuperAdmin()).thenReturn(true);
         EcuadorianUser user1 = new EcuadorianUser();
         user1.setId(1L);
         user1.setFirstName("Veronica");
@@ -53,6 +55,7 @@ class UserServiceImplSearchTest {
     @Test
     @DisplayName("shouldUseDefaultLimitWhenLimitIsNull")
     void shouldUseDefaultLimitWhenLimitIsNull() {
+        when(currentUserService.isSuperAdmin()).thenReturn(true);
         when(userRepository.searchByBranchIdAndText(eq(11L), eq(""), any())).thenReturn(Page.empty());
         List<UserResponseDto> result = userService.searchByBranchIdAndText(11L, null, null);
         assertEquals(0, result.size());
@@ -64,6 +67,7 @@ class UserServiceImplSearchTest {
     @Test
     @DisplayName("shouldFindDoctorsByBranchIdOnly")
     void shouldFindDoctorsByBranchIdOnly() {
+        when(currentUserService.isSuperAdmin()).thenReturn(true);
         EcuadorianUser doctor = new EcuadorianUser();
         doctor.setId(3L);
         doctor.setFirstName("Ana");
