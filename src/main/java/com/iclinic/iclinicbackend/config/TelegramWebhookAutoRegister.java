@@ -42,6 +42,9 @@ public class TelegramWebhookAutoRegister implements ApplicationRunner {
     @Value("${telegram.webhook.auto-register.initial-delay-seconds:8}")
     private long initialDelaySeconds;
 
+    @Value("${telegram.webhook.seed-token:}")
+    private String seedToken;
+
     private static final Set<ChannelConnectionStatus> OPERATIVE =
             Set.of(ChannelConnectionStatus.PENDING, ChannelConnectionStatus.ACTIVE, ChannelConnectionStatus.VERIFIED);
 
@@ -71,6 +74,14 @@ public class TelegramWebhookAutoRegister implements ApplicationRunner {
         for (ChannelConnection channel : telegramChannels) {
             try {
                 String token = secretEncryptionService.decrypt(channel.getAccessTokenEncrypted());
+                if ("SEED_PLACEHOLDER_TOKEN".equals(token)) {
+                    if (seedToken == null || seedToken.isBlank()) {
+                        log.warn("Canal Telegram de ejemplo {} sin token configurado; omitiendo registro", channel.getId());
+                        continue;
+                    }
+                    token = seedToken.trim();
+                    channel.setAccessTokenEncrypted(secretEncryptionService.encrypt(token));
+                }
                 String webhookUrl = buildUrl(webhookBaseUrl, channel.getCompany().getId());
 
                 // Generamos un secret determinístico: SHA-256(botToken) → hex[:32]

@@ -1,5 +1,7 @@
 package com.iclinic.iclinicbackend.shared.exception;
 
+import com.google.firebase.auth.AuthErrorCode;
+import com.google.firebase.auth.FirebaseAuthException;
 import com.iclinic.iclinicbackend.modules.crm.exception.ChannelConnectionActiveNotFoundException;
 import com.iclinic.iclinicbackend.modules.crm.exception.ChannelConnectionNotFoundException;
 import com.iclinic.iclinicbackend.modules.crm.exception.ConversationNotFoundException;
@@ -22,6 +24,27 @@ import java.util.stream.Collectors;
 @ControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(FirebaseAuthException.class)
+    public ResponseEntity<ErrorResponse> handleFirebaseAuthException(
+            FirebaseAuthException ex, WebRequest request) {
+        AuthErrorCode code = ex.getAuthErrorCode();
+        if (code == AuthErrorCode.EXPIRED_ID_TOKEN) {
+            log.warn("Firebase ID token expired");
+            return build(HttpStatus.UNAUTHORIZED,
+                    "La sesión ha expirado. Renueva el token o vuelve a iniciar sesión.",
+                    "EXPIRED_ID_TOKEN", request);
+        }
+        if (code == AuthErrorCode.INVALID_ID_TOKEN || code == AuthErrorCode.REVOKED_ID_TOKEN
+                || code == AuthErrorCode.USER_DISABLED) {
+            log.warn("Firebase authentication rejected: {}", code);
+            return build(HttpStatus.UNAUTHORIZED,
+                    "Credenciales no válidas. Vuelve a iniciar sesión.", code.name(), request);
+        }
+        log.error("Firebase authentication service failed: {}", code);
+        return build(HttpStatus.INTERNAL_SERVER_ERROR,
+                "Error al verificar la autenticación", "FIREBASE_AUTH_ERROR", request);
+    }
 
     @ExceptionHandler(CompanyNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleCompanyNotFoundException(

@@ -100,7 +100,9 @@ INSERT INTO branch_schedules (id, branch_id, doctor_id, day_of_week, start_time,
 -- =====================================================
 ALTER TABLE companies ALTER COLUMN id RESTART WITH 3;
 ALTER TABLE branches ALTER COLUMN id RESTART WITH 4;
-ALTER TABLE users ALTER COLUMN id RESTART WITH 5;
+-- Administrador local solicitado. Firebase vincula la cuenta al iniciar sesión con este correo.
+INSERT INTO users (id, first_name, last_name, email, role, document_type, active, is_platform_admin, created_at, updated_at, user_type, company_id, branch_id) VALUES (5, 'Isaac', '', 'isaaccs2003@gmail.com', 'SUPER_ADMIN', 'PASSPORT', true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'ECUADORIAN', 1, 1);
+ALTER TABLE users ALTER COLUMN id RESTART WITH 6;
 ALTER TABLE crm_channel_connections ALTER COLUMN id RESTART WITH 4;
 ALTER TABLE crm_contacts ALTER COLUMN id RESTART WITH 5;
 ALTER TABLE crm_contact_phones ALTER COLUMN id RESTART WITH 5;

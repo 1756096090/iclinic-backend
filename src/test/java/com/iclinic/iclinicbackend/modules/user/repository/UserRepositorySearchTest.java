@@ -23,6 +23,17 @@ class UserRepositorySearchTest {
     @Autowired private BranchRepository branchRepository;
     @Autowired private CompanyRepository companyRepository;
     @Test
+    void localAdministratorIsSeededWithPlatformAccess() {
+        var user = userRepository.findByEmail("isaaccs2003@gmail.com").orElseThrow();
+        assertThat(user.getRole()).isEqualTo(UserRole.SUPER_ADMIN);
+        assertThat(user.getActive()).isTrue();
+        assertThat(user.getIsPlatformAdmin()).isTrue();
+        assertThat(user.getCompany().getId()).isEqualTo(1L);
+        assertThat(user.getBranch().getId()).isEqualTo(1L);
+        assertThat(user.getPassword()).isNull();
+    }
+
+    @Test
     @DisplayName("shouldSearchUsersByBranchAndTextWithLimit")
     void shouldSearchUsersByBranchAndTextWithLimit() {
         EcuadorianCompany company = companyRepository.save(new EcuadorianCompany("Clinica Central Test", "1799999999999"));
