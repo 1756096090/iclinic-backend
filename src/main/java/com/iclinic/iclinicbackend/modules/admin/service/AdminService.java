@@ -200,8 +200,7 @@ public class AdminService {
     private AuthUserResponseDto toAuthDto(User user) {
         return AuthUserResponseDto.builder()
                 .id(user.getId())
-                .externalAuthId(user.getExternalAuthId())
-                .authProvider(user.getAuthProvider())
+                .keycloakUserId(user.getKeycloakUserId())
                 .email(user.getEmail())
                 .fullName(user.getFirstName() + " " + user.getLastName())
                 .photoUrl(user.getPhotoUrl())

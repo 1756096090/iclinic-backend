@@ -10,6 +10,55 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d iclinic_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Keycloak tiene SU PROPIA base. Compartirla con la aplicacion ataria el ciclo
+  # de vida de la identidad al del dominio: una migracion de la app no puede
+  # poder dejar sin login a todo el mundo.
+  keycloak-db:
+    image: postgres:16
+    container_name: iclinic-keycloak-db
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak123
+    volumes:
+      - keycloak_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: iclinic-keycloak
+    # start-dev NO vale para produccion: sin HTTPS, sin cache distribuida y con
+    # el realm importado en cada arranque. Para desplegar se usa `start` con
+    # KC_HOSTNAME y certificados.
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak123
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8081:8080"
+    volumes:
+      # Realm versionado. Un realm configurado a mano en la consola no es
+      # reproducible: al recrear el contenedor se pierde.
+      - ./infra/keycloak/realm-iclinic.json:/opt/keycloak/data/import/realm-iclinic.json:ro
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
 
 volumes:
   postgres_data:
+  keycloak_data:

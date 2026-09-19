@@ -38,17 +38,43 @@ dependencies {
     runtimeOnly 'org.flywaydb:flyway-database-postgresql'
     annotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // Integracion contra PostgreSQL y Keycloak reales. H2 no soporta EXCLUDE,
+    // tipos rango ni RLS: una prueba en H2 no prueba nada de eso.
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'org.testcontainers:postgresql'
+    testImplementation 'com.github.dasniko:testcontainers-keycloak:3.4.0'
     runtimeOnly 'com.h2database:h2'
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.16'
     implementation 'org.springframework.boot:spring-boot-starter-security'
-    implementation 'com.google.firebase:firebase-admin:9.4.3'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
 }
 
 tasks.named('test') {
     useJUnitPlatform()
     // tools/ contiene utilidades de desarrollo, no tests de la aplicacion.
     exclude '**/tools/**'
+    // Los *IT levantan PostgreSQL y Keycloak reales con Testcontainers, asi que
+    // exigen Docker. `test` tiene que poder correr sin el: van en su propia tarea.
+    exclude '**/*IT.class'
+}
+
+// Tests de integracion contra PostgreSQL y Keycloak reales.
+//   ./gradlew integrationTest      (requiere Docker levantado)
+// Aqui viven las pruebas negativas de los constraints y de la autenticacion:
+// H2 no soporta EXCLUDE, ni tipos rango, ni RLS, y un mock no prueba que la
+// audiencia del token se este validando de verdad.
+tasks.register('integrationTest', Test) {
+    group = 'verification'
+    description = 'Tests de integracion con Testcontainers (requiere Docker)'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    include '**/*IT.class'
+    shouldRunAfter tasks.named('test')
 }
 
 // Regenera build/generated-schema.sql (DDL PostgreSQL de las entidades JPA) para

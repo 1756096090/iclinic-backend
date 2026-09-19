@@ -10,14 +10,15 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 // Repositorio de usuarios
 @SuppressWarnings("unused")
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
-    Optional<User> findByExternalAuthId(String externalAuthId);
+    Optional<User> findByKeycloakUserId(UUID keycloakUserId);
     boolean existsByEmail(String email);
-    boolean existsByExternalAuthId(String externalAuthId);
+    boolean existsByKeycloakUserId(UUID keycloakUserId);
     List<User> findByRole(UserRole role);
     List<User> findByBranchIdAndRoleAndActiveTrueOrderByFirstNameAsc(Long branchId, UserRole role);
     List<User> findByCompanyId(Long companyId);

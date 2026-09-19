@@ -1,0 +1,187 @@
+{
+  "realm": "iclinic",
+  "enabled": true,
+  "displayName": "iClinic",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "failureFactor": 5,
+
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 28800,
+  "ssoSessionMaxLifespan": 43200,
+  "offlineSessionIdleTimeout": 1,
+  "offlineSessionMaxLifespanEnabled": true,
+  "offlineSessionMaxLifespan": 1,
+
+  "clients": [
+    {
+      "clientId": "iclinic-api",
+      "name": "iClinic API (resource server)",
+      "enabled": true,
+      "bearerOnly": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "defaultClientScopes": ["web-origins", "roles", "profile", "email", "acr"],
+      "protocolMappers": [
+        {
+          "name": "audience-iclinic-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "iclinic-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ],
+      "_comentario_audiencia": "Sin este mapper el token de iclinic-web NO lleva iclinic-api en `aud`, y AudienceValidator lo rechaza con 401. Es el error de configuracion mas comun al montar esto.",
+      "defaultRoles": [],
+      "roles": {}
+    },
+    {
+      "clientId": "iclinic-web",
+      "name": "iClinic Web (SPA)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3000/*"
+      },
+      "redirectUris": ["http://localhost:3000/*", "http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:3000", "http://localhost:5173"],
+      "defaultClientScopes": ["web-origins", "roles", "profile", "email", "acr"],
+      "optionalClientScopes": ["iclinic-api-audience"]
+    }
+  ],
+
+  "roles": {
+    "client": {
+      "iclinic-api": [
+        { "name": "SUPER_ADMIN",     "description": "Administrador de la plataforma" },
+        { "name": "ADMIN",           "description": "Administrador de la empresa" },
+        { "name": "BRANCH_MANAGER",  "description": "Responsable de una o varias sucursales" },
+        { "name": "DENTIST",         "description": "Profesional clinico" },
+        { "name": "ASSISTANT",       "description": "Asistente clinico" },
+        { "name": "RECEPTIONIST",    "description": "Recepcion y agenda" },
+        { "name": "EXTERNAL_DOCTOR", "description": "Profesional externo con acceso acotado" },
+        { "name": "BILLING",         "description": "Facturacion" },
+        { "name": "PATIENT",         "description": "Paciente" }
+      ]
+    }
+  },
+
+  "_comentario_roles": "Nombres identicos al enum UserRole que ya existe, mas BRANCH_MANAGER y BILLING. Es DENTIST, no DOCTOR; es ADMIN, no ORG_ADMIN. Cambiarlos obliga a mapear en la migracion y no aporta nada.",
+
+  "authenticationFlows": [
+    {
+      "alias": "browser-mfa-condicional",
+      "description": "Navegador con OTP condicional: obligatorio para quien tenga el rol exigido",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "auth-cookie",           "requirement": "ALTERNATIVE", "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false },
+        { "flowAlias": "mfa-condicional-formulario", "requirement": "ALTERNATIVE", "priority": 20, "userSetupAllowed": false, "autheticatorFlow": true }
+      ]
+    },
+    {
+      "alias": "mfa-condicional-formulario",
+      "description": "Usuario y contrasena, mas OTP si el rol lo exige",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "auth-username-password-form", "requirement": "REQUIRED",    "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false },
+        { "flowAlias": "mfa-condicional",                 "requirement": "CONDITIONAL", "priority": 20, "userSetupAllowed": false, "autheticatorFlow": true }
+      ]
+    },
+    {
+      "alias": "mfa-condicional",
+      "description": "OTP obligatorio para SUPER_ADMIN, ADMIN y DENTIST",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "conditional-user-role", "requirement": "REQUIRED", "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false },
+        { "authenticator": "auth-otp-form",         "requirement": "REQUIRED", "priority": 20, "userSetupAllowed": false, "autheticatorFlow": false }
+      ]
+    }
+  ],
+  "browserFlow": "browser-mfa-condicional",
+  "_comentario_mfa": "La condicion de rol de `conditional-user-role` se parametriza en la consola por ejecucion (una por rol). Este fichero deja el flujo montado; las tres condiciones concretas se anaden con `kcadm` en infra/keycloak/configurar-mfa.sh.",
+
+  "users": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "username": "juan.garcia@clinica.ec",
+      "email": "juan.garcia@clinica.ec",
+      "firstName": "Juan",
+      "lastName": "García López",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "dev", "temporary": false }],
+      "clientRoles": { "iclinic-api": ["ADMIN"] }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "username": "maria.rodriguez@clinica.ec",
+      "email": "maria.rodriguez@clinica.ec",
+      "firstName": "María",
+      "lastName": "Rodríguez Pérez",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "dev", "temporary": false }],
+      "clientRoles": { "iclinic-api": ["DENTIST"] }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "username": "carlos.mendoza@clinica.ec",
+      "email": "carlos.mendoza@clinica.ec",
+      "firstName": "Carlos",
+      "lastName": "Mendoza Silva",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "dev", "temporary": false }],
+      "clientRoles": { "iclinic-api": ["RECEPTIONIST"] }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "username": "pedro.martinez@clinica.co",
+      "email": "pedro.martinez@clinica.co",
+      "firstName": "Pedro",
+      "lastName": "Martínez López",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "dev", "temporary": false }],
+      "clientRoles": { "iclinic-api": ["ADMIN"] }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "username": "isaaccs2003@gmail.com",
+      "email": "isaaccs2003@gmail.com",
+      "firstName": "Isaac",
+      "lastName": "",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "dev", "temporary": false }],
+      "clientRoles": { "iclinic-api": ["SUPER_ADMIN"] }
+    }
+  ],
+  "_comentario_usuarios": "Los UUID coinciden con keycloak_user_id de db/seed/dev-seed.sql e import.sql, para que el entorno local funcione sin pasos manuales. La contrasena 'dev' es SOLO para desarrollo: este realm no se despliega."
+}

@@ -40,9 +40,6 @@ public class CreateUserRequestDto {
     @Schema(description = "Email del usuario", example = "juan.perez@iclinic.com")
     private String email;
 
-    @Schema(description = "Contraseña (opcional, Firebase maneja autenticación)", example = "secret123")
-    private String password;
-
     @Schema(description = "Teléfono del usuario", example = "+593987654321")
     private String phone;
 

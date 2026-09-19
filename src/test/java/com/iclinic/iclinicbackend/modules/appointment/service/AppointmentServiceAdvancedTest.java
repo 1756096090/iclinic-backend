@@ -96,7 +96,6 @@ class AppointmentServiceAdvancedTest {
         doctor.setFirstName("Dr");
         doctor.setLastName("House");
         doctor.setEmail("doctor@test.com");
-        doctor.setPassword("secret");
         doctor.setRole(UserRole.DENTIST);
         doctor.setDocumentType(com.iclinic.iclinicbackend.shared.enums.DocumentType.CEDULA_EC);
         doctor.setDocumentNumber("1711111111");

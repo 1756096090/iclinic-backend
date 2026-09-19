@@ -48,7 +48,7 @@ public class MembershipBackfillService {
                 continue;
             }
 
-            // Usuarios sin empresa (p. ej. pacientes temporales de Firebase) no generan membresía.
+            // Usuarios sin empresa (p. ej. administradores de plataforma) no generan membresía.
             if (user.getCompany() == null) {
                 continue;
             }

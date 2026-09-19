@@ -12,6 +12,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.UUID;
+
 @Service
 @RequiredArgsConstructor
 public class CurrentUserService {
@@ -26,9 +28,15 @@ public class CurrentUserService {
         if (auth.getDetails() instanceof User user) {
             return user;
         }
-        String uid = (String) auth.getPrincipal();
-        return userRepository.findByExternalAuthId(uid)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Usuario no encontrado"));
+        // Respaldo: TokenRevocationFilter deja el usuario en los detalles, asi que
+        // esta rama solo se alcanza si alguien construye la autenticacion a mano.
+        try {
+            UUID subject = UUID.fromString(auth.getName());
+            return userRepository.findByKeycloakUserId(subject)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Usuario no encontrado"));
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sujeto no valido");
+        }
     }
 
     public boolean isSuperAdmin() {
