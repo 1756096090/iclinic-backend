@@ -1,671 +1,777 @@
-# Plan de migración a la arquitectura objetivo
+# Plan de migración: nueva arquitectura de datos + Keycloak
 
 Estado: borrador para aprobación. No se ha implementado nada.
 
-## 0. Sobre el documento de referencia
+Versión corregida del plan de cinco bloques, contrastada contra el repositorio el
+2026-09-19. Sustituye al plan de ocho fases anterior. Las correcciones respecto a lo
+que se propuso están marcadas con **[C-n]** y justificadas en §9.
 
-El fichero citado en el encargo, `docs/architecture/arquitectura-completa-iclinic.md`,
-no existe. En `docs/architecture/` solo está `arquitectura-iclinic.mmd`, un diagrama
-ER de 375 líneas con la leyenda embebida en los comentarios de columna.
+```
+                 A. Keycloak (identidad)  ─────────────┐
+                                                        ├──►  D. Autorización fina
+   B. Tenant: FK compuestas + RLS  ──►  C. patients/practitioners  ──┘
+                                                        └──►  E. Agenda: EXCLUDE
+```
 
-De las cuatro partes que el encargo describe como contrato, el `.mmd` aporta dos:
+A y B son independientes entre sí. C necesita B. D necesita A, B y C. E necesita C
+y el `timestamptz` que arrastra.
 
-| Parte | Presente |
+---
+
+## 0. Estado real del repositorio
+
+Verificado, no supuesto. Varios puntos del contexto original ya no se cumplen.
+
+| Comprobación | Contexto original | Realidad verificada |
+|---|---|---|
+| Flyway | "si no está, añádelo" | **Está.** `build.gradle:37-38`; `V1__baseline_schema.sql` cubre **19 tablas** |
+| `spring.profiles.active` | — | `postgres` |
+| `ddl-auto` | "validate en TODOS los perfiles" | `validate` en raíz y `postgres`; **`create-drop` en `h2`** |
+| Firebase | 10 ficheros | 10 en `src/main/java` + `build.gradle`; **15** contando `src/` entero |
+| `@PreAuthorize` | "solo UN fichero lo usa" | **Cero.** El único match es un javadoc en `Permission.java:26` |
+| `LocalDateTime` | — | **25 ficheros** |
+| Testcontainers | — | **0** |
+| Trabajo sin publicar | "publícalo antes de empezar" | `main` va 1 commit por delante de `origin/main` (`4e02b45`) más 2 ficheros de `docs/` |
+
+El commit sin publicar contiene Flyway, el baseline, la reorganización de perfiles,
+`dev-seed.sql` y los documentos de arquitectura. **Publicarlo es el paso cero de
+todo lo demás.**
+
+### Numeración de migraciones
+
+`V1` está aplicada. Las nuevas empiezan en `V2`.
+
+**Flyway es lineal y el plan permite A y B en paralelo.** Si dos personas trabajan
+a la vez, las dos numerarán a partir del último visible y colisionarán al
+fusionar — o peor, no colisionarán en Git y Flyway fallará al arrancar con
+«found more than one migration with version 4». Se reservan rangos por bloque:
+
+| Bloque | Rango | Migraciones previstas |
+|---|---|---|
+| A | V2–V9 | `V2__users_keycloak.sql`, `V3__drop_firebase_columns.sql` |
+| B | V10–V29 | `V10__claves_candidatas.sql`, `V11__denormalizar_company_id.sql`, `V12__fk_compuestas.sql`, `V13__rls.sql` |
+| C | V30–V49 | `V30__patients_practitioners.sql`, `V31__backfill_clinico.sql`, `V32__appointments_repuntar.sql`, `V33__drop_columnas_viejas.sql` |
+| D | V50–V69 | roles, vigencias, `patient_care_team`, `access_grants`, auditoría |
+| E | V70–V89 | `timestamptz`, tabla `timezones`, rangos y `EXCLUDE` |
+
+Los huecos se quedan vacíos: Flyway no exige numeración contigua. El coste de un
+hueco es cero; el de una colisión es un arranque roto en el peor momento.
+
+`V13__rls.sql` es la única con orden absoluto: se ejecuta **después** de toda
+migración que cree tablas con `company_id`. Como C, D y E crean tablas nuevas, cada
+una añade sus propias políticas al final de su rango en lugar de reabrir V13.
+
+---
+
+## Bloque A · Keycloak sustituye a Firebase
+
+Autoservicio. No depende de ningún cambio de modelo.
+
+### A.1 Infraestructura
+
+Keycloak en `docker-compose.yml` con base propia, no la de la aplicación. Realm
+`iclinic`, clientes `iclinic-api` (bearer-only) e `iclinic-web` (público, PKCE).
+Realm exportado a `infra/keycloak/realm-iclinic.json` y versionado: un realm
+configurado a mano en una consola no es reproducible.
+
+### A.2 Client roles
+
+Los nombres del enum `UserRole` que ya existe, para que la migración sea mecánica:
+
+```
+SUPER_ADMIN, ADMIN, DENTIST, ASSISTANT, RECEPTIONIST, EXTERNAL_DOCTOR, PATIENT
+```
+
+más dos nuevos: `BRANCH_MANAGER` y `BILLING`.
+
+Es `DENTIST`, no `DOCTOR`. Es `ADMIN`, no `ORG_ADMIN`.
+
+### A.3 Backend
+
+- Fuera `com.google.firebase:firebase-admin`; dentro
+  `spring-boot-starter-oauth2-resource-server`.
+- `oauth2ResourceServer().jwt(...)` con un `JwtAuthenticationConverter` que lea
+  `resource_access["iclinic-api"].roles` y las publique como `ROLE_*`.
+- **Validación de audiencia.** Sin ella se acepta un token emitido para otro
+  cliente: un `JwtClaimValidator` sobre `aud` añadido al
+  `DelegatingOAuth2TokenValidator` junto al del issuer.
+- `.anyRequest().denyAll()` en lugar de `.authenticated()`, con cada ruta
+  declarada. Hoy un controlador nuevo nace abierto.
+
+### A.4 Ficheros a tocar **[C-9]**
+
+El criterio de aceptación es que `grep -ri firebase src/ build.gradle` no devuelva
+nada. Eso son **15 ficheros**, no 10. La lista original omitía cinco:
+
+| Fichero | Acción |
 |---|---|
-| Diagrama ER | Sí, completo: 40 tablas y sus relaciones. Tras las tres revisiones de §8 son 42 |
-| Leyenda de decisiones | Parcial, como comentarios de columna (`"ES la faceta: paciente, doctor"`, `"ancla al humano, no al rol"`, `"define el HOY"`) |
-| Constraints | No. Hay pistas en comentarios (`"UNIQUE org+type+value"`, `"EXCLUDE doctor y recurso"`) pero no una especificación |
-| Decisiones abiertas | No existe tal sección |
+| `config/FirebaseConfig.java` | eliminar |
+| `modules/auth/filter/FirebaseAuthenticationFilter.java` | eliminar |
+| `modules/auth/controller/FirebaseAuthController.java` | eliminar |
+| `modules/auth/service/FirebaseAuthSyncService.java` | eliminar |
+| `config/SecurityConfig.java` | reescribir |
+| `config/NotificationChannelInterceptor.java` | reescribir la validación del token STOMP |
+| `modules/access/service/MembershipBackfillService.java` | quitar la referencia |
+| `modules/user/dto/CreateUserRequestDto.java` | quitar la referencia |
+| `shared/exception/GlobalExceptionHandler.java` | quitar el manejo de `FirebaseAuthException` |
+| `build.gradle` | quitar la dependencia |
+| `src/main/resources/application.properties` | quitar `firebase.service-account.path` |
+| `src/main/resources/db/seed/dev-seed.sql` | los `external_auth_id` de ejemplo |
+| `src/main/resources/import.sql` | ídem, perfil `h2` |
+| `src/test/.../config/NotificationChannelInterceptorTest.java` | reescribir contra JWT de Keycloak |
+| `src/test/.../shared/exception/FirebaseAuthExceptionHandlerTest.java` | **reescribir, no borrar** |
 
-Este plan se construye sobre el `.mmd` más las restricciones del encargo, que
-cubren buena parte de lo que faltaría. Donde una u otra cosa no alcanza, hay una
-pregunta en §9. Si existe una versión `.md` más completa, este plan debe revisarse
-contra ella antes de ejecutar la fase 1.
+Ese último test cubre el manejo de excepciones de autenticación. El comportamiento
+que verifica sigue siendo necesario con Keycloak, solo cambia la excepción de
+origen. Se renombra a `AuthExceptionHandlerTest` y se adapta. No se elimina: la
+regla de trabajo dice que un test no se borra para que pase el build.
 
-## 1. Situación actual
+### A.5 Tabla `users`
 
-19 tablas en `V1__baseline_schema.sql`, 210 clases Java, 25 clases de test.
+Migración `V2__users_keycloak.sql`:
 
-Lo que el esquema actual no tiene y el objetivo exige: `organizations`, `persons`,
-`principals`, `role_assignments`, `access_policies`, `clinical_records`,
-`service_types`, `resources`, `appointment_events`, `modules`, campañas, y el
-concepto entero de faceta.
+```
+keycloak_user_id    uuid UNIQUE
+subject_type        varchar CHECK IN ('HUMAN','SERVICE_ACCOUNT')
+keycloak_client_id  varchar
+CHECK ((subject_type='SERVICE_ACCOUNT') = (keycloak_client_id IS NOT NULL))
+tokens_valid_from   timestamptz NOT NULL DEFAULT now()
+```
 
-Tres rasgos del modelo actual que condicionan todo el trabajo:
+`V3__drop_firebase_columns.sql` retira `external_auth_id` y `auth_provider`.
 
-1. **`companies` es a la vez tenant y entidad legal.** La herencia
-   `Company → EcuadorianCompany | ColombianCompany` mete el RUC y el NIT como
-   columnas de la misma tabla. En el objetivo eso se parte en tres niveles.
-2. **`users` es a la vez persona, credencial y rol.** Guarda nombre, documento,
-   nacionalidad, teléfono, `role` como enum de una sola fila, `company_id` y
-   `branch_id` directos.
-3. **No existe nada clínico.** `clinical_records` se construye desde cero, lo que
-   es una ventaja: no hay datos históricos que migrar ni que auditar
-   retroactivamente.
+`tokens_valid_from` es el interruptor de emergencia: en el filtro, tras validar la
+firma, si `jwt.getIssuedAt() < user.tokensValidFrom` → 401. Un `UPDATE` corta todas
+las sesiones de un usuario en la siguiente petición, sin estado de sesión en el
+backend.
 
-## 2. Mapa tabla por tabla
+**[C-8] `users.role` también se retira aquí.** Hoy hay dos fuentes de rol:
+`users.role` (que es la que lee `FirebaseAuthenticationFilter`) y
+`company_memberships.role`. Si solo se sustituye la segunda, en el bloque D, queda
+una columna huérfana que sigue pareciendo autoritativa. El filtro nuevo no la lee:
+toma el rol del JWT y lo interseca con la membresía. La columna se marca obsoleta
+en A y se elimina en D, cuando exista `company_membership_roles` que la sustituya.
 
-### 2.1 Tenencia
+### A.6 Migración de usuarios
 
-| Hoy | Objetivo | Conversión |
-|---|---|---|
-| `companies` | `organizations` + `legal_entities` + `legal_entity_tax_ids` | Cada fila genera una organización, una sociedad y una fila de identificación fiscal. `company_type` EC/CO da `country_code`; `ruc`/`nit` dan `tax_id_type`/`tax_id_value`; `currency_code` y `fiscal_config` no existen hoy |
-| `branches.company_id` | `branches.legal_entity_id` | Reapunta a la sociedad creada desde su empresa |
-| — | `branches.timezone` | Columna nueva, obligatoria: define el "hoy" |
-| — | `resources` | Tabla nueva, sin origen. `branches.has_laboratory` y `bed_capacity` se conservan |
+Script idempotente y por lotes que cree los usuarios existentes en Keycloak vía
+Admin API y rellene `keycloak_user_id`.
 
-La herencia de `Company` desaparece: no hay subclase por país en el objetivo, solo
-`country_code` y `fiscal_config`. Con ella desaparece la cadena
-Strategy + Registry + Factory de creación de empresas, que hoy es uno de los
-patrones documentados del repositorio.
+Los usuarios actuales no tienen contraseña en nuestro lado: hay que enviarles el
+flujo de establecer contraseña de Keycloak. **Es un cambio visible para ellos.** Se
+documenta en el PR y no se ejecuta sin avisar.
 
-### 2.2 Persona y acceso
+### A.7 Tokens
 
-| Hoy | Objetivo | Conversión |
-|---|---|---|
-| `users` (datos personales) | `persons` | `first_name`, `last_name`, `nationality`. `birth_date` no existe hoy |
-| `users.document_type` / `document_number` / `passport_number` | `person_identifiers` | Una fila por documento. `DocumentType` (7 valores con país embebido) se traduce a `id_type` |
-| `users.phone` | `person_phones` | Requiere normalización E.164, que hoy no se aplica a usuarios |
-| `users.email` | `person_emails` + `users.email` | El correo queda en los dos sitios: como dato de la persona y como credencial |
-| `users` (credencial) | `users` + `user_person_links` | Conserva `id`, `email`, `password_hash`, `is_platform_admin`. El enlace a la persona pasa a la tabla nueva, ver 8.1. Pierde `company_id`, `branch_id`, `role`, y todo lo personal |
-| `users.external_auth_id` / `auth_provider` | [NECESITA DECISIÓN] | El objetivo muestra `password_hash` pero no la identidad federada. Hoy la autenticación es Firebase. Ver §9.2 |
-| `company_memberships` + `membership_branches` | `principals` + `role_assignments` | Cada pertenencia genera un principal por organización y una asignación con `scope_path`. Las sucursales de `membership_branches` generan una asignación por sucursal |
-| `roles`, `permissions`, `role_permissions` | `role_definitions` + `permission_catalog` | RBAC clásico por tablas de unión pasa a `permissions jsonb` con `actions`/`notActions` |
-| `users.role` (enum de 7 valores) | `role_definitions.code` | Los siete valores se convierten en definiciones de rol de sistema |
-| `external_doctor_patient_access` | `role_assignments` | Es un proto-`role_assignment`: ya tiene `reason`, `expires_at`, `active` y ámbito de recurso. Se convierte en asignación con `scope_path` de paciente, `valid_until` y `reason` |
-| — | `access_policies` | Tabla nueva. Las ventanas temporales están hoy implícitas en `expires_at` |
-| `audit_logs` | `audit_logs` | Gana `organization_id` (hoy `company_id`), `occurred_at`, `actor_assignment_id`, `scope_path`, `ip_address` de tipo `inet`, y `metadata` pasa de `varchar(2000)` a `jsonb`. Ver 8.18: el diagrama objetivo no tenía columna temporal. La tabla actual sí tiene `created_at`, que es de donde sale el backfill |
+Access token 5 min. Refresh 8 h de inactividad, 12 h absoluto, para personal.
+Offline tokens deshabilitados. MFA obligatorio (OTP condicional) para
+`SUPER_ADMIN`, `ADMIN` y `DENTIST`.
 
-### 2.3 Agenda y clínico
+### A.8 Criterios de aceptación
 
-| Hoy | Objetivo | Conversión |
-|---|---|---|
-| `appointments.company_id` | `appointments.legal_entity_id` | Reapunta |
-| `appointments.contact_id` → `crm_contacts` | `appointments.patient_assignment_id` → `role_assignments` | Cada contacto con cita necesita persona, principal y asignación PATIENT creados en el backfill |
-| `appointments.doctor_id` → `users` | `appointments.practitioner_assignment_id` → `role_assignments`, más `practitioner_person_id` → `persons` | Cada doctor con cita necesita asignación DOCTOR. La persona va denormalizada porque el `EXCLUDE` de solapamiento tiene que ir sobre ella, no sobre la asignación, ver 8.19 |
-| `appointments.scheduled_start` / `scheduled_end` (`timestamp`) | `scheduled_start` (`timestamptz`) + `slot tstzrange` | Requiere la zona horaria de la sucursal, que hoy no existe. Ver §9.1 |
-| — | `appointments.service_type_id`, `resource_id`, `conversation_id`, `attended_at` | Columnas nuevas |
-| — | `appointment_events` | Tabla nueva |
-| — | `service_types` | Tabla nueva. Hoy la duración sale de `branch_schedules.slot_duration_minutes` |
-| `branch_schedules` | `practitioner_schedules` | `doctor_id` pasa a `assignment_id`; gana `valid_from`/`valid_until`. La clave única actual `(doctor_id, day_of_week)` impide horarios versionados y hay que retirarla |
-| `branch_blocked_slots` | `schedule_exceptions` | Hoy solo bloquea sucursal entera; el objetivo admite `assignment_id` nulo para ese caso y no nulo para un doctor. Gana `exception_type` |
-| — | `clinical_records` | Tabla nueva, sin datos que migrar |
+- `grep -ri firebase src/ build.gradle` no devuelve nada.
+- Testcontainers con Keycloak: token con `DENTIST` entra en un endpoint de
+  `DENTIST`; sin ese rol → 403; con `aud` distinto de `iclinic-api` → 401; emitido
+  antes de `tokens_valid_from` → 401.
+- Documentado qué cambia el frontend (OIDC + PKCE).
 
-### 2.4 CRM
+---
 
-| Hoy | Objetivo | Conversión |
-|---|---|---|
-| `crm_channel_connections.company_id` | `legal_entity_id` | El número pertenece a una sociedad |
-| `crm_channel_connections.branch_id` | `channel_connection_branches` | De relación única a tabla de unión |
-| `webhook_verify_token`, `external_phone_number_id` | `webhook_token uuid UK` | Nuevo identificador por conexión, generado en el backfill |
-| `crm_contacts.company_id` | `organization_id` | Reapunta al tenant |
-| `crm_contacts.full_name` | `display_name` | Renombrado |
-| `crm_contacts.phone`, `email` | `person_phones`, `person_emails` | Solo cuando el contacto se identifica con una persona; `person_id` es nulo hasta entonces |
-| `crm_contact_phones` | `person_phones` | La tabla desaparece; los números pasan a la persona |
-| `crm_contacts.source_channel`, `branch_id`, `active` | Sin equivalente | `active` se subsume en `status` (LEAD/ACTIVE/ARCHIVED) |
-| `crm_channel_user_links` | igual + `organization_id` | La unicidad pasa a ser por organización, ver 8.2. Conserva `external_chat_id`, `username` y `display_name`, ver 8.4 |
-| `crm_conversations` | igual + `organization_id`, `team_id`, `window_expires_at` | `status` se conserva con los mismos tres valores, ver 8.4 |
-| `crm_messages` | igual + `organization_id` | `status` se sustituye por `crm_message_events`; `media_url` por `crm_message_attachments` |
-| — | `teams`, `contact_consents`, `crm_message_events`, `crm_message_attachments` | Tablas nuevas |
-| — | `modules`, `company_modules`, `segments`, `message_templates`, `campaigns`, `campaign_channels`, `campaign_recipients` | Tablas nuevas |
+## Bloque B · Aislamiento de tenant: FK compuestas + RLS
 
-### 2.5 Tablas que desaparecen
+### B.1 Claves candidatas
 
-`companies`, `company_memberships`, `membership_branches`, `roles`, `permissions`,
-`role_permissions`, `crm_contact_phones`, `branch_schedules`,
-`branch_blocked_slots`, `external_doctor_patient_access`.
+`UNIQUE (company_id, id)` en `branches`, `company_memberships`, `crm_contacts`,
+`crm_channel_connections`, `crm_conversations`. **[C-7]** Los nombres reales de las
+tres últimas llevan el prefijo `crm_`; el plan original decía `conversations`,
+`channel_connections` y `channel_user_links`.
 
-## 3. Fases
+Una FK de N columnas necesita un `UNIQUE` con exactamente esas N columnas en ese
+orden. Un `UNIQUE` de 2 no respalda una FK de 3. Donde haga falta una de 3
+—`(company_id, branch_id, id)` en `branches`— se añade también ese `UNIQUE`.
 
-Una fase por sesión, cada una en su rama, cada una con `./gradlew build` en verde
-antes de cerrarse. Ninguna fase deja el repositorio sin compilar.
+**[C-1] `users` queda fuera de esta lista.** `users.company_id` es **NULLABLE**
+(`V1__baseline_schema.sql:41`): los administradores de plataforma no tienen
+empresa. Con nulos, `UNIQUE (company_id, id)` no impide duplicados, y la FK
+`(company_id, doctor_id) → users` no puede resolverse porque
+`appointments.company_id` sí es `NOT NULL`. La consecuencia práctica es que **la FK
+de `appointments.doctor_id` no se crea en este bloque**: se crea en el bloque C
+contra `practitioners`, cuyo `company_id` sí es `NOT NULL`. Hasta entonces, esa
+relación sigue validándose en el servicio.
 
-### Fase 0 — Preparación (rama `arch/fase-0-preparacion`)
+Alternativa, si se prefiere cerrarla ya: hacer `users.company_id` `NOT NULL` y
+modelar los administradores de plataforma fuera de `users` o con una empresa
+técnica. Es una decisión de modelo, no de migración. Ver §10.1.
 
-Sin cambio funcional. Deja el terreno listo.
+### B.2 FK compuestas
 
-- `btree_gist` habilitado: sin esa extensión no existe `EXCLUDE` con `tstzrange`
-  más igualdad sobre `bigint`.
-- Testcontainers en `build.gradle`, con perfil de integración separado para que
-  `./gradlew test` siga corriendo sin Docker.
-- Soporte de `jsonb` en las entidades mediante el mapeo nativo de Hibernate 6.
-  No requiere librería nueva.
-- Conversión de todas las columnas temporales a `timestamptz`. Hoy conviven
-  `TIMESTAMP(6)` y `TIMESTAMP WITH TIME ZONE` en la misma base.
-- Infraestructura de aislamiento: definición del filtro de Hibernate y del
-  interceptor que lo activa, sin aplicarlo aún a ninguna entidad.
+Denormalizar `company_id` donde falte, rellenarlo desde el padre, ponerlo
+`NOT NULL` y añadir la FK:
 
-Migración: `V2__preparacion_timestamptz_extensiones.sql`.
-Backfill: conversión in situ de columnas temporales, asumiendo que los valores
-actuales están en la zona horaria del servidor. [NECESITA DECISIÓN, §9.1]
-Rollback: `ALTER` inverso a `timestamp`; la extensión se puede dejar.
-Endpoints que rompen: ninguno.
-Clases que desaparecen: ninguna.
-
-### Fase 1 — Tenencia (rama `arch/fase-1-tenencia`)
-
-- `organizations`, `legal_entities`, `legal_entity_tax_ids`, `resources`.
-- `branches.legal_entity_id` y `branches.timezone`.
-
-Migraciones: `V3__tenencia_estructura.sql`, `V4__tenencia_backfill.sql`,
-`V5__tenencia_constraints.sql`.
-
-Backfill: una organización y una sociedad por cada fila de `companies`, con el
-`slug` derivado del nombre; `tax_id_type` según `company_type`; `country_code` EC o
-CO; reapuntado de `branches`. La zona horaria de cada sucursal no se puede deducir
-de los datos. [NECESITA DECISIÓN, §9.1]
-
-Endpoints que rompen contrato:
-
-| Antes | Después |
+| Tabla | FK a crear |
 |---|---|
-| `POST /api/v1/companies/ecuadorian`, `/colombian` | Alta de organización y de sociedad por separado |
-| `GET /api/v1/companies`, `/{id}` | Respuesta sin `ruc`/`nit` directos; la identificación fiscal pasa a una colección |
-| `POST /api/v1/branches/clinic/{companyId}`, `/hospital/{companyId}` | El identificador de la ruta pasa a ser el de la sociedad |
-| `GET /api/v1/branches/company/{companyId}` | Por sociedad o por organización |
+| `membership_branches` | `+ company_id`; `(company_id, membership_id) → company_memberships`; `(company_id, branch_id) → branches` |
+| `appointments` | `(company_id, branch_id) → branches`; `(company_id, contact_id) → crm_contacts` |
+| `branch_schedules` | `+ company_id`; FK compuesta a `branches` |
+| `branch_blocked_slots` | `+ company_id`; FK compuesta a `branches` |
+| `crm_conversations` | `+ company_id`; FK compuestas a `crm_contacts` y `crm_channel_connections` |
+| `crm_messages` | `+ company_id`; FK compuesta a `crm_conversations` |
+| `crm_channel_user_links` | `+ company_id`; FK compuesta a `crm_contacts` |
 
-Clases que desaparecen: `Company`, `EcuadorianCompany`, `ColombianCompany`,
-`CompanyFactory`, `CompanyCreationStrategy` y sus tres implementaciones,
-`CompanyCreationStrategyRegistry`, los repositorios y DTO por país,
-`CompanyType`. Aparecen `Organization`, `LegalEntity`, `LegalEntityTaxId`,
-`Resource` con sus capas.
+La FK de `membership_branches` sustituye al comentario del javadoc de
+`CompanyMembership`: «La integridad (branch.company == company) se valida en el
+servicio». Tras esta migración, esa validación sobra y se retira.
 
-Rollback: las tablas nuevas se eliminan y `branches.company_id` se restaura desde
-`legal_entities.organization_id`. Documentado en la cabecera de cada migración.
+Antes de cada FK, una consulta en la migración que detecte filas ya inconsistentes.
+Si las hay, la migración **falla y las lista**. No se arreglan solas: son datos
+reales.
 
-### Fase 2 — Persona (rama `arch/fase-2-persona`)
+Migraciones: `V10__claves_candidatas.sql`, `V11__denormalizar_company_id.sql`,
+`V12__fk_compuestas.sql`.
 
-- `persons`, `person_identifiers`, `person_phones`, `person_emails`,
-  `person_addresses`.
-- `users` reducido a credencial, con `user_person_links` como enlace a persona.
+### B.3 RLS
 
-Migraciones: `V6__persona_estructura.sql`, `V7__persona_backfill.sql`,
-`V8__persona_constraints.sql`.
+Dos roles de base de datos, y la distinción es lo que hace que RLS no sea
+decorativa:
 
-Backfill: una persona por usuario, dentro de la organización que hoy da su
-`company_id`. Los usuarios sin empresa (administradores de plataforma) necesitan
-tratamiento aparte. Documento y teléfono se extraen a sus tablas; el teléfono
-requiere normalización E.164, que hoy no se aplica y puede producir colisiones con
-la unicidad nueva.
+- `iclinic_app`: el de la aplicación. No propietario, sin `BYPASSRLS`, sin `DELETE`.
+- `iclinic_migrator`: el de Flyway. Con `BYPASSRLS`.
 
-Endpoints que rompen contrato: `POST /api/v1/users`, `GET /api/v1/users` y
-variantes, `GET /api/v1/auth/me`, `POST /api/v1/auth/firebase/sync`,
-`POST /api/v1/admin/users/invite`, `POST /api/v1/admin/client-onboarding`. Todos
-cambian la forma del cuerpo: los datos personales dejan de estar en el usuario.
+Con `FORCE ROW LEVEL SECURITY` el propietario de la tabla también queda sujeto a la
+política si no es superusuario. El DDL pasa, pero un backfill de migración afecta a
+0 filas **sin dar error**: `UPDATE t SET x=...` → `UPDATE 0`, sin excepción. De ahí
+`BYPASSRLS` para el migrador, y `SET row_security = off;` al principio de toda
+migración que toque datos, que convierte ese silencio en
+`ERROR: query would be affected by row-level security policy`. Un superusuario
+siempre evita RLS: el problema no aparece probando como `postgres` y sí aparece en
+producción.
 
-Clases que desaparecen: `EcuadorianUser`, `ColombianUser`, `PeruvianUser`,
-`InternationalUser`, `UserType`, `DocumentType` en su forma actual. `User` se
-reduce.
+Política generada en bucle para todas las tablas con `company_id`, no a mano: una
+tabla sin política tiene cero aislamiento y nadie se entera.
 
-Rollback: reconstrucción de las columnas de `users` desde `persons` y sus tablas.
-Posible solo mientras exista una persona por usuario.
+```
+ALTER TABLE <t> ENABLE ROW LEVEL SECURITY;
+ALTER TABLE <t> FORCE  ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON <t>
+  USING      (company_id IS NOT DISTINCT FROM
+              nullif(current_setting('iclinic.company_id', true), '')::bigint)
+  WITH CHECK (company_id IS NOT DISTINCT FROM
+              nullif(current_setting('iclinic.company_id', true), '')::bigint);
+```
 
-### Fase 3 — Autorización (rama `arch/fase-3-autorizacion`)
+El `nullif(current_setting(..., true), '')` es lo que la hace fallar cerrada: sin
+variable fijada, la política es `NULL` y no devuelve ninguna fila.
 
-El corazón del cambio.
+Migración: `V13__rls.sql`, ejecutada después de todas las que crean tablas.
 
-- `principals`, `role_definitions`, `permission_catalog`, `role_assignments`,
-  `access_policies`.
-- Compilador de condiciones a SQL, con un conjunto cerrado de operadores,
-  devolviendo `Specification` para inyectar en el repositorio.
-- Resolución de `@policy.*` contra `access_policies` con la precedencia:
-  asignación, rol más sociedad, sociedad, organización, código.
-- `organization_id` denormalizado en las tablas tenant-scoped y filtro activo.
-- Índices de resolución, incluido `scope_path` con `text_pattern_ops`.
+### B.4 Contexto de tenant
 
-Migraciones: `V9__acceso_estructura.sql`, `V10__acceso_catalogo_roles.sql`,
-`V11__acceso_backfill_asignaciones.sql`, `V12__acceso_indices.sql`,
-`V13__organization_id_denormalizado.sql`.
+`set_config('iclinic.company_id', ?, true)` por transacción, en un
+`TransactionSynchronization` o un aspecto. El tercer parámetro a `true` la hace
+local: se revierte al commit o al rollback y no contamina la conexión del pool.
 
-Backfill: un principal por pareja de persona y organización; una asignación por
-cada `company_memberships`, con `scope_path` de organización; una asignación
-adicional por cada fila de `membership_branches`, con `scope_path` de sucursal; una
-asignación por cada fila de `external_doctor_patient_access`, con `scope_path` de
-paciente, `reason` y `valid_until` desde `expires_at`; las siete definiciones de rol
-de sistema con sus permisos.
+`TenantContext` request-scoped: `sub` del JWT → `users` → `company_memberships`
+activa. Si no es miembro de la empresa pedida → 403. Sin caché más allá de unos
+segundos: la caché es justo lo que impide que revocar una membresía tenga efecto
+inmediato.
 
-El mapeo de los siete roles actuales a `actions`/`notActions` no se puede deducir
-del código: hoy la autorización es una lista de rutas en `SecurityConfig`, no un
-catálogo de permisos. [NECESITA DECISIÓN, §9.3]
+### B.5 Perfiles y Testcontainers **[C-3]**
 
-Endpoints que rompen contrato: `GET /api/v1/auth/me` (el rol único pasa a una lista
-de asignaciones), todo `/api/v1/external-doctor-access/**`, y el comportamiento de
-autorización de todos los demás, aunque su forma no cambie.
+El plan original pedía `ddl-auto=validate` en todos los perfiles. **Eso deja el
+perfil `h2` sin arrancar**: las migraciones son SQL de PostgreSQL
+(`GENERATED BY DEFAULT AS IDENTITY`, `tstzrange`, `EXCLUDE`, `inet`) y Flyway está
+deshabilitado ahí, así que con `validate` nadie crea el esquema.
 
-Clases que desaparecen: `CompanyMembership`, `Role`, `Permission` y sus
-repositorios, `MembershipBackfillService`, `MembershipBackfillRunner`,
-`ExternalDoctorPatientAccess`, `ExternalDoctorAccessService`,
-`ExternalDoctorAccessController`, `UserRole`. `CurrentUserService` se reescribe
-entera.
+Corrección: `validate` en la raíz y en `postgres`; el perfil `h2` conserva
+`create-drop` como excepción documentada, tal como está hoy. A partir del bloque E
+ese perfil pierde utilidad de todos modos, porque H2 no soporta `tstzrange` ni
+`EXCLUDE` y `ddl-auto` no podrá generar el esquema real. La alternativa limpia es
+eliminarlo en el bloque E y quedarse solo con `postgres` y Testcontainers. Ver
+§10.2.
 
-Rollback: el más costoso. Las asignaciones creadas a mano durante la fase no
-tienen equivalente en el modelo viejo. Documentar que el rollback es hasta el
-punto del backfill, no posterior.
+Testcontainers: `spring-boot-testcontainers`, `testcontainers:postgresql` y
+`:junit-jupiter`, con una `AbstractPostgresIT` (`@ServiceConnection`, contenedor
+estático reutilizado).
 
-### Fase 4 — Agenda (rama `arch/fase-4-agenda`)
+### B.6 Criterios de aceptación
 
-- `service_types`, `practitioner_schedules`, `schedule_exceptions`,
-  `appointment_events`.
-- `appointments` reapuntado a asignaciones, con `slot tstzrange`.
-- `EXCLUDE` de solapamiento por doctor y por recurso.
-- "Hoy" calculado en la zona horaria de la sucursal.
+Como `iclinic_app`, contra PostgreSQL real:
 
-Migraciones: `V14__agenda_estructura.sql`, `V15__agenda_backfill.sql`,
-`V16__agenda_exclude.sql`.
+- Sin variable fijada: `SELECT count(*) FROM appointments` → 0.
+- Empresa 1 fijada: se ven las suyas y ninguna de la 2.
+- `SELECT * FROM appointments WHERE id = <id de la empresa 2>` → 0 filas. Éste
+  demuestra que el IDOR entre empresas queda neutralizado en el motor.
+- `INSERT` con `company_id` ajeno → error de política.
+- Una prueba negativa por cada FK compuesta nueva.
+- `iclinic_app` no tiene `BYPASSRLS` y no es propietario.
+- Dos transacciones seguidas con empresas distintas sobre la misma conexión del
+  pool no se filtran datos.
+- Consulta de cobertura en CI que falle si hay una tabla con `company_id` sin
+  política.
 
-Backfill: asignación PATIENT por cada contacto con citas y DOCTOR por cada usuario
-con citas; `slot` desde `scheduled_start` y `scheduled_end`; horarios desde
-`branch_schedules` con `valid_from` abierto; excepciones desde
-`branch_blocked_slots` con `assignment_id` nulo; un tipo de servicio por defecto por
-sociedad, porque hoy no existe el concepto.
+Rendimiento: con RLS, `company_id` debe ser la primera columna de los índices
+compuestos. La política añade ese predicado a cada consulta; si no encabeza el
+índice, se filtra después de leer. Se revisan los índices en este mismo PR.
 
-Las citas actuales pueden solaparse: nada lo impide hoy salvo una comprobación en
-Java que recorre filas. El `EXCLUDE` fallará si hay solapamientos históricos, y hay
-que medirlos antes. [NECESITA DECISIÓN, §9.5]
+---
 
-Endpoints que rompen contrato: todos los de `/api/v1/appointments`.
-`GET /available-slots` cambia parámetros; `POST` recibe asignaciones en vez de
-identificadores de contacto y de doctor, y crea la asignación PATIENT en el mismo
-transaccional; `GET /contact/{contactId}` pasa a ser por asignación o por persona.
+## Bloque C · Modelo clínico: `patients` y `practitioners`
 
-Clases que desaparecen: `BranchSchedule`, `BranchBlockedSlot` y sus repositorios.
-La validación de solapamiento en Java se retira en favor del constraint.
+El más invasivo. Hoy el modelo confunde tres cosas: el paciente de una cita es un
+`CrmContact`, el profesional es un `User` directo, y `User` hace de credencial, de
+humano, de profesional y a veces de paciente. Eso impide tener número de historia,
+licencia, especialidades y relación médico-paciente, y es la causa de que la
+autorización no pueda responder «¿puede este doctor ver a *este* paciente?».
 
-Rollback: restaurar `doctor_id` y `contact_id` desde las asignaciones. Posible
-mientras la asignación conserve su origen.
+### C.1 Tablas nuevas
 
-### Fase 5 — Clínico (rama `arch/fase-5-clinico`)
+```
+patients (
+  id, company_id, medical_record_number, primary_branch_id, status, ...
+  UNIQUE (company_id, id),
+  UNIQUE (company_id, medical_record_number)
+)
+practitioners (
+  id, company_id, user_id, license_number, license_country, license_status, status,
+  UNIQUE (company_id, id),
+  UNIQUE (company_id, user_id)
+)
+practitioner_branches (company_id, practitioner_id, branch_id)  PK compuesta
+specialties (code PK)
+practitioner_specialties (company_id, practitioner_id, specialty_code)  PK compuesta
+```
 
-- `clinical_records` anclado en persona y sociedad.
-- Auditoría de lectura, no solo de escritura.
-- Acceso denegado a recurso clínico devuelve 404.
-- Bloqueo de edición tras la firma.
+**[C-5] `patients` no lleva `person_ref`.** El plan original pedía
+`UNIQUE (company_id, person_ref)` y a la vez decía que no se cree la tabla
+`persons`, así que `person_ref` no apuntaba a nada. Y proponía además
+`crm_contacts.patient_id`, que es un segundo enlace para la misma relación.
 
-Migraciones: `V17__clinical_records.sql`.
-Backfill: ninguno; no hay datos clínicos.
-Endpoints: todos nuevos.
-Clases que desaparecen: ninguna.
-Rollback: eliminar la tabla.
+Corrección: el enlace es **uno solo y va en `crm_contacts`**:
 
-### Fase 6 — CRM (rama `arch/fase-6-crm`)
+```
+crm_contacts.patient_id   nullable
+  FK compuesta (company_id, patient_id) → patients
+  UNIQUE (company_id, patient_id)        -- un contacto como mucho por paciente
+```
 
-- Conexiones colgando de la sociedad, con `webhook_token`.
-- `channel_connection_branches`, `teams`, `contact_consents`,
-  `crm_message_events`, `crm_message_attachments`.
-- `crm_contacts.person_id`, `organization_id` en conversaciones y mensajes,
-  `window_expires_at`.
-- Unicidad de idempotencia de webhooks.
+Razones: un paciente que llega sin pasar por el CRM (se presenta en mostrador) no
+tiene contacto, y con `person_ref NOT NULL` en `patients` habría que inventarle uno
+falso. La identidad del paciente es su propia fila más su
+`medical_record_number`; el contacto de CRM es un canal por el que se le localiza,
+no su identidad. Cuando exista `persons`, `patients` ganará `person_id` y ése será
+el ancla; hasta entonces no hay ninguno, y está bien que no lo haya.
 
-Migraciones: `V18__crm_estructura.sql`, `V19__crm_backfill.sql`,
-`V20__crm_constraints.sql`.
+`UNIQUE (company_id, user_id)` en `practitioners` **no es cosmético**: es lo que
+hace que un `EXCLUDE` sobre `practitioner_id` detecte al mismo humano agendado dos
+veces a la misma hora aunque sea en sucursales distintas. Si se permiten dos filas
+por humano, ese `EXCLUDE` deja de ver el choque y vuelve la doble reserva. No se
+relaja.
 
-Backfill: `webhook_token` generado para cada conexión; `branch_id` actual movido a
-la tabla de unión; `organization_id` propagado; `crm_contact_phones` volcado a
-`person_phones` creando persona cuando el contacto se pueda identificar;
-`crm_messages.status` volcado a un evento inicial; `media_url` a adjunto.
+### C.2 Migración de datos
 
-Aquí se resuelve, de paso, lo que documenta `specs/001-canales-multicuenta/`: el
-modelo objetivo ya admite varias conexiones por sociedad. Conviene decidir si esa
-spec se cierra como absorbida por esta fase.
+Aquí está el riesgo: son datos reales de pacientes.
 
-Endpoints que rompen contrato: todo `/api/v1/crm/channels`, las rutas de webhook
-(pasan a llevar `webhook_token`), y las respuestas de conversación y mensaje.
+- `practitioners`: una fila por cada `User` con rol `DENTIST` o `EXTERNAL_DOCTOR`.
+- `patients`: una fila por cada `CrmContact` con al menos una cita. Los contactos
+  sin citas se quedan como contactos: un lead no es un paciente.
+- `appointments` gana `patient_id` y `practitioner_id`, se rellenan, y **después**
+  se retiran `contact_id` y `doctor_id`. En migraciones separadas, dejando las
+  columnas viejas un release por si hay que volver atrás.
+- Si un `CrmContact` tuviera citas en dos empresas, necesita dos `patients`. Se
+  comprueba **antes** de migrar; si ocurre, se para y se avisa.
+- Consulta de conteo antes y después dentro de la propia migración: ninguna cita
+  puede perder su paciente ni su profesional.
 
-Clases que desaparecen: `CrmContactPhone` y su repositorio, `MetaWebhookController`,
-`TelegramWebhookController`, `MetaWebhookService` y su implementación,
-`TelegramWebhookService`, `InboundWebhookMessageDto`, `ChannelConnectionStatus` en
-su forma actual.
+Migraciones: `V30__patients_practitioners.sql`, `V31__backfill_clinico.sql`,
+`V32__appointments_repuntar.sql`, y `V33__drop_columnas_viejas.sql` un release
+después.
 
-Rollback: documentado por migración; el volcado de teléfonos a persona no es
-reversible sin pérdida.
+Aquí se crea también la FK que el bloque B tuvo que dejar pendiente
+(**[C-1]**): `(company_id, practitioner_id) → practitioners`.
 
-### Fase 7 — Módulos (rama `arch/fase-7-modulos`)
+### C.3 Lo que no se hace todavía
 
-`modules`, `company_modules`, `permission_catalog.module_code`.
-Migración: `V21__modulos.sql`. Backfill: catálogo inicial y activación de todos los
-módulos existentes para las organizaciones actuales.
-Endpoints: nuevos. Clases que desaparecen: ninguna.
+No se separa `User` en `users` + `persons`. Es la pieza más invasiva y no hace
+falta para la autorización: `practitioners.user_id` basta. Queda para un bloque
+posterior.
 
-### Fase 8 — Campañas (rama `arch/fase-8-campanas`)
+### C.4 Criterios de aceptación
 
-`segments`, `message_templates`, `campaigns`, `campaign_channels`,
-`campaign_recipients`.
-Migración: `V22__campanas.sql`. Backfill: ninguno.
-Endpoints: nuevos. Clases que desaparecen: ninguna.
+- Toda cita conserva paciente y profesional (conteo antes/después en la migración).
+- Dos `practitioners` para el mismo `user` en la misma empresa → rechazado.
+- `practitioner_branches` con una sucursal de otra empresa → rechazado.
+- Ningún `CrmContact` con citas se queda sin `patient`.
 
-### Fase 9 — Limpieza (rama `arch/fase-9-limpieza`)
+---
 
-Eliminación de las tablas y columnas de compatibilidad que hayan sobrevivido, y de
-las rutas marcadas como obsoletas.
-Migración: `V23__limpieza.sql`. Rollback: no lo hay; es el punto de no retorno y
-debe ejecutarse solo con las fases anteriores estabilizadas.
+## Bloque D · Autorización fina
 
-## 4. Resumen de migraciones
+Keycloak dice **qué rol** tienes. PostgreSQL dice **sobre qué** puedes ejercerlo.
+Nunca se meten en Keycloak roles como `PATIENT_482_READ`: son cientos de miles, el
+JWT explota, y una interconsulta que empieza ahora no puede esperar a que se
+renueve el token.
 
-| Fase | Migraciones |
+### D.1 Varios roles por membresía
+
+```
+company_membership_roles (company_id, membership_id, role_code)  PK compuesta
+CHECK role_code IN ('SUPER_ADMIN','ADMIN','BRANCH_MANAGER','DENTIST',
+                    'ASSISTANT','RECEPTIONIST','EXTERNAL_DOCTOR','BILLING','PATIENT')
+```
+
+En una clínica pequeña la misma persona es recepcionista y asistente; con un rol
+único hay que elegir el más permisivo.
+
+El rol efectivo es la **intersección** del rol del JWT y el de esta tabla: quitar un
+rol en PostgreSQL tiene efecto inmediato aunque el token vivo aún lo declare.
+Keycloak es el catálogo; PostgreSQL es el interruptor.
+
+**[C-8]** Aquí se elimina `company_memberships.role` y también `users.role`, que en
+el bloque A quedó marcada como obsoleta.
+
+### D.2 Vigencia en el acceso por sucursal
+
+A `membership_branches` y `practitioner_branches`:
+
+```
+valid_from timestamptz NOT NULL DEFAULT now()
+valid_until timestamptz              -- NULL = permanente
+revoked_at, revoked_by_user_id, revocation_reason
+CHECK (valid_until IS NULL OR valid_until > valid_from)
+CHECK (revoked_at  IS NULL OR revoked_at >= valid_from)
+CHECK ((revoked_at IS NULL) = (revoked_by_user_id IS NULL))
+```
+
+Resuelve «permanente en Cumbayá, hasta el 30/09 en Quito Norte».
+
+Se mantiene la PK/UNIQUE de la tripleta **sin hacerla parcial**: un índice único
+parcial no puede respaldar una FK y se perdería la garantía del bloque B.
+Consecuencia asumida: una fila por par; reconceder es un `UPDATE` y el histórico
+vive en la auditoría.
+
+### D.3 `patient_care_team`
+
+La relación clínica declarada cuando aún no hay cita.
+
+```
+(company_id, patient_id, practitioner_id, care_role)  PK compuesta
+care_role CHECK IN ('PRIMARY','TREATING','ASSISTING')
++ las mismas columnas de vigencia
+UNIQUE parcial (company_id, patient_id) WHERE care_role='PRIMARY' AND revoked_at IS NULL
+CHECK (care_role <> 'PRIMARY' OR valid_until IS NULL)
+```
+
+Sin ese último `CHECK` el índice miente: un `PRIMARY` caducado por `valid_until`
+seguiría bloqueando al sustituto, porque un índice no puede evaluar `now()`. Al
+prohibir caducidad en `PRIMARY`, «no revocado» y «vigente» son lo mismo y el índice
+es exacto. Al médico de cabecera se le sustituye **revocando**.
+
+### D.4 `access_grants`
+
+Sustituye a `ExternalDoctorPatientAccess`, que hoy tiene `patientId`, `companyId` y
+`branchId` como `Long` sueltos sin FK, un booleano `active`, ninguna revocación y
+nada que impida grants duplicados.
+
+```
+id, company_id,
+grantee_membership_id  FK compuesta → company_memberships
+patient_id  NULL       FK compuesta → patients
+branch_id   NULL       FK compuesta → branches
+scope_kind  GENERATED (PATIENT | BRANCH | ORGANIZATION)
+permission, reason_code, justification, granted_by_user_id,
+valid_from, valid_until,
+validity tstzrange GENERATED ALWAYS AS (tstzrange(valid_from, valid_until,'[)')) STORED,
+revoked_at, revoked_by_user_id, revocation_reason
+```
+
+Columnas tipadas con FK reales, no `resource_type`/`resource_id` como cadenas: con
+texto la base de datos no puede impedir un grant sobre un paciente de otra empresa;
+con FK compuesta, sí.
+
+```
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+CHECK (NOT (patient_id IS NOT NULL AND branch_id IS NOT NULL))
+CHECK (reason_code IN ('CONSULTATION','SECOND_OPINION','COVERAGE','AUDIT',
+                       'EMERGENCY','SUPPORT','ADMIN_TEMP'))
+CHECK (valid_until IS NOT NULL OR reason_code = 'COVERAGE')
+CHECK (scope_kind <> 'ORGANIZATION' OR reason_code IN ('AUDIT','SUPPORT'))
+CHECK (length(btrim(justification)) >= 10)
+CHECK (valid_until IS NULL OR valid_until - valid_from <= interval '2161 hours')
+CHECK (reason_code <> 'EMERGENCY'
+       OR (valid_until IS NOT NULL AND valid_until - valid_from <= interval '25 hours'))
+EXCLUDE USING gist (company_id WITH =, grantee_membership_id WITH =,
+                    permission WITH =, scope_kind WITH =,
+                    COALESCE(patient_id, branch_id, 0) WITH =, validity WITH &&)
+  WHERE (revoked_at IS NULL)
+```
+
+Los topes van en horas y por resta, no en días ni con suma. `valid_from + interval`
+es `STABLE` y no vale en un `CHECK`; y `interval '90 days'` compara como 2160 h
+exactas, mientras que 90 días de calendario que cruzan un cambio de hora son 2161.
+
+Migración de cada `ExternalDoctorPatientAccess` a un grant con
+`reason_code='CONSULTATION'`. Los que tengan `expiresAt` nulo reciben 30 días desde
+`created_at` y **se listan en la salida de la migración** para que alguien los
+revise.
+
+### D.5 Auditoría **[C-6]**
+
+El plan original exigía registrar el ALLOW y el DENY, pero ningún bloque creaba las
+columnas. `audit_logs` hoy tiene `action`, `entity_type`, `entity_id`,
+`metadata varchar(2000)` y `created_at`, y nada más.
+
+Corrección: este bloque incluye la migración mínima que su propio criterio necesita.
+
+```
+occurred_at     timestamptz NOT NULL DEFAULT now()   -- renombra created_at
+actor_subject   uuid            -- el `sub` de Keycloak; vale para humano y servicio
+actor_type      varchar CHECK IN ('HUMAN','SERVICE_ACCOUNT','SYSTEM')
+CHECK (actor_type = 'SYSTEM' OR actor_subject IS NOT NULL)
+outcome         varchar CHECK IN ('ALLOW','DENY','ERROR')
+deny_reason     varchar
+grant_path      varchar         -- la VÍA por la que se concedió
+request_id      uuid
+ip_address      inet
+metadata        jsonb           -- desde varchar(2000)
+```
+
+`iclinic_app` recibe `INSERT` y nada más sobre esta tabla: una auditoría que la
+aplicación puede modificar no prueba nada.
+
+Lo que **no** entra aquí y queda para un bloque F: particionar por mes, la política
+de retención y la deduplicación de lecturas de alta frecuencia. Son trabajo de
+operación, no de autorización, y particionar después exige parada — conviene
+decidirlo pronto aunque se ejecute más tarde. Ver §10.4.
+
+### D.6 `AuthorizationService`
+
+Bean `authz` en `shared/authorization`. Métodos: `canReadPatient`,
+`canReadAppointment`, `canCreateAppointment`, `canUpdateAppointment`,
+`canManageBranch`, `canReadConversation`, `canSendCrmMessage`.
+
+Cada uno, siempre en este orden:
+
+1. Tenant: el objeto se resuelve dentro de la empresa actual, o no existe.
+2. Estado del actor: usuario y membresía activos.
+3. Permiso general: rol del JWT ∩ `company_membership_roles`.
+4. Relación con el objeto concreto.
+5. Auditoría: el ALLOW y también el DENY, con su motivo.
+
+Devuelve **la vía** por la que se concedió, no un booleano: en una inspección hay
+que poder decir si fue por una cita, por el equipo tratante o por un grant.
+
+### D.7 «¿Puede leer a este paciente?»
+
+Seis vías, la más normal primero:
+
+- **(a)** `ADMIN` / `SUPER_ADMIN` de la empresa.
+- **(b)** `BRANCH_MANAGER`, contra **sus** sucursales vigentes. Rama separada de (a)
+  y con etiqueta propia: metido en (a) le daría acceso a toda la empresa. El
+  paciente pertenece a la sucursal por `primary_branch_id` **o por tener actividad
+  allí**; `primary_branch_id` es nullable y apoyarse solo en él deniega en silencio
+  a todo paciente registrado sin sucursal asignada.
+- **(c)** `patient_care_team` vigente.
+- **(d)** Continuidad asistencial, **dos reglas distintas**: cita **atendida** →
+  acceso permanente; cita **agendada** → ventana `[inicio − 24 h, fin + 24 h)`. No
+  vale solo `now() >= inicio - 24h`: es cierto para cualquier cita pasada, así que
+  una cita olvidada de hace tres años daría acceso permanente y el estado de
+  atendida no serviría para nada.
+- **(e)** `access_grants` sobre ese paciente, con `validity @> now()` y
+  `revoked_at IS NULL`.
+- **(f)** `access_grants` de ámbito sucursal o empresa.
+
+Los plazos de (d) van en configuración, no como constantes en el código.
+
+### D.8 Service accounts
+
+Las integraciones (agente de WhatsApp, scheduler, batch) usan Service Accounts de
+Keycloak, no usuarios humanos falsos, y pasan por el mismo `AuthorizationService`
+sin bypass. Su alcance de empresa va en:
+
+```
+service_account_grants (company_id, user_id, scopes text[])
+CHECK (scopes <@ ARRAY['appointment.read','appointment.create','appointment.write',
+                       'patient.basic.read','crm.read','crm.send','file.read'])
+```
+
+`clinical.*` no está en la lista a propósito: la historia clínica no se lee con un
+token de máquina. Se prohíbe también en código por `subject_type`, para que una
+casilla mal marcada en la consola de Keycloak no pueda habilitarlo.
+
+Sin esta tabla, un service account autenticado opera sobre cualquier empresa,
+porque su token no dice de quién es.
+
+### D.9 Cerrar el IDOR
+
+- `@PreAuthorize("@authz.canReadAppointment(#id)")` en todo endpoint con id en la
+  ruta. **[C-2] Hoy no lo usa ningún endpoint**: el único match de `@PreAuthorize`
+  en el proyecto es un comentario javadoc en `Permission.java:26`. No hay ningún
+  ejemplo previo del que partir, así que el PR debe incluir el primero completo,
+  con su test, como plantilla del resto.
+- Repositorios: prohibido buscar sin tenant en el código de negocio.
+  `findByBranchIdOrderByScheduledStartAsc(branchId)` →
+  `findByCompanyIdAndBranchIdOrderByScheduledStartAsc(companyId, branchId)`.
+- Códigos, y es deliberado: objeto de **otra** empresa → 404 (un 403 confirmaría
+  que existe en otra clínica); objeto de **mi** empresa que no me corresponde → 403
+  (así se pide una interconsulta en lugar de compartir credenciales).
+- Prueba ArchUnit que falle la compilación si un método de `@RestController` tiene
+  un `@PathVariable` acabado en `Id` sin `@PreAuthorize` ni marca de público. Las
+  revisiones se olvidan; la compilación no. **ArchUnit es una dependencia nueva que
+  no estaba en ninguna lista aprobada**: ver §10.3.
+- Trampa más frecuente: autorizar un registro clínico por su id comprobando solo el
+  tenant. Dentro de una misma clínica eso deja a cualquier doctor leer a cualquier
+  paciente cambiando el número. Regla única: se resuelve el **paciente** del
+  registro y se le aplica la regla del paciente. Nunca hay una regla propia del
+  registro.
+
+### D.10 Criterio de aceptación de punta a punta
+
+Dra. Ana, rol `DENTIST`, sucursal habitual Cumbayá. Paciente 845 se atiende en
+Quito Norte. Recibe una interconsulta de 48 h con permiso `clinical.read`.
+
+| Situación | Esperado |
 |---|---|
-| 0 | V2 |
-| 1 | V3, V4, V5 |
-| 2 | V6, V7, V8 |
-| 3 | V9, V10, V11, V12, V13 |
-| 4 | V14, V15, V16 |
-| 5 | V17 |
-| 6 | V18, V19, V20 |
-| 7 | V21 |
-| 8 | V22 |
-| 9 | V23 |
+| Sin grant | 403 |
+| Durante la ventana, paciente 845 | 200 |
+| Durante la ventana, paciente 846 | 403 |
+| Pasadas las 48 h, sin borrar nada | 403 |
+| Revocado en mitad de la ventana | 403 inmediato |
+| Grant duplicado activo solapado | rechazado por la base de datos |
+| Grant `EMERGENCY` de 7 días | rechazado por la base de datos |
+| Grant de `clinical.sign` | rechazado por la base de datos |
 
-Cada fase separa estructura, backfill y constraints en migraciones distintas: un
-constraint que falla por datos sucios no debe dejar a medias la creación de las
-tablas.
+---
 
-## 5. Constraints comprometidos
+## Bloque E · Agenda: `tstzrange` y `EXCLUDE`
 
-| Constraint | Fase | Nota |
+Hoy el anti-solapamiento es
+`findByDoctorIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThan`: un
+leer-y-luego-escribir. Dos peticiones concurrentes ven el hueco libre y las dos
+insertan.
+
+### E.1 Primero `timestamptz`
+
+Un `tstzrange` construido sobre columnas `timestamp` sin zona está mal desde el
+origen.
+
+- `LocalDateTime` → `Instant` en `Appointment.scheduledStart`/`scheduledEnd`,
+  `BranchBlockedSlot` y las fechas de vigencia de `BranchSchedule`. **No** se tocan
+  `BranchSchedule.startTime`/`endTime`: son `LocalTime`, hora de pared, y está bien.
+- `ALTER ... TYPE timestamptz USING <col> AT TIME ZONE '<zona de captura>'`.
+  **Bloqueado por §10.5:** si hay datos de Colombia mezclados con Ecuador, convertir
+  con una sola zona desplaza citas históricas y no es reversible.
+- `branches.timezone` (IANA) `NOT NULL`. **No** validado con regex: el patrón
+  `'^[A-Za-z]+/...'` rechaza `UTC`, que es válida, y acepta `Marte/Olympus`, que no.
+  Se usa una tabla `timezones` poblada desde `pg_timezone_names` y una FK.
+- Todo `now()` de `AppointmentServiceImpl` que decida disponibilidad se resuelve en
+  la zona de la **sucursal**, no en la del servidor.
+
+### E.2 Rangos y `EXCLUDE`
+
+```
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+slot            tstzrange NOT NULL
+scheduled_start timestamptz GENERATED ALWAYS AS (lower(slot)) STORED
+CHECK (NOT isempty(slot) AND lower_inc(slot) AND NOT upper_inc(slot))
+```
+
+`lower(tstzrange)` es inmutable, así que la columna generada funciona y no puede
+contradecir al rango.
+
+**[C-4] Los tres `EXCLUDE` no van sobre el mismo rango.** El plan original ponía el
+del profesional y el del paciente sobre `slot`, e introducía después
+`slot_blocking` sin decir que ninguno se moviera; así el buffer no se respeta y
+`slot_blocking` no sirve para nada. El reparto correcto:
+
+| Constraint | Columna | Rango | Por qué |
+|---|---|---|---|
+| Profesional | `practitioner_id` | **`slot_blocking`** | El buffer es tiempo del doctor |
+| Paciente | `patient_id` | `slot` | Al paciente no le afecta el buffer del doctor |
+| Sillón | `resource_id` | `slot` | El sillón se libera al acabar la cita |
+
+Los tres **parciales**, con `WHERE status NOT IN ('CANCELLED','NO_SHOW')`. Sin ese
+`WHERE`, cancelar y reagendar en el mismo hueco sería imposible. El de sillón lleva
+además `resource_id IS NOT NULL`.
+
+Antes de crearlos, detectar solapamientos ya existentes. Si los hay, la migración
+falla y los lista.
+
+### E.3 Buffer
+
+Si se añade buffer posterior al servicio: no se lee del tipo de servicio al
+consultar. Se congela en la cita (`buffer_after_minutes`) y se deriva
+`slot_blocking` por trigger.
+
+- No puede ser columna generada: `timestamptz + interval` no es inmutable
+  (`ERROR: generation expression is not immutable`).
+- El trigger va `BEFORE INSERT OR UPDATE`, **sin lista de columnas**. Con
+  `UPDATE OF slot, buffer_after_minutes`, un `UPDATE ... SET slot_blocking = ...` no
+  lo dispara y se puede inflar el bloqueo de un profesional a voluntad.
+
+Si cambia el buffer del servicio, el histórico no se reescribe: el buffer del
+servicio es el valor por defecto al agendar, no la definición del pasado.
+
+### E.4 Servicio
+
+Se conserva la comprobación previa —da el mensaje de error bonito en el caso
+normal— y se añade el manejo de la violación del `EXCLUDE`: capturar
+`DataIntegrityViolationException`, distinguir por nombre de constraint y traducir a
+409 con un mensaje por caso. La comprobación previa es para la experiencia de uso;
+el constraint es la garantía.
+
+### E.5 Criterios de aceptación
+
+- Test de concurrencia real con Testcontainers: dos hilos crean la misma cita a la
+  vez; exactamente uno gana y el otro recibe 409. **Este test debe fallar si se
+  quita el `EXCLUDE`** — comprobarlo antes de darlo por bueno.
+- Cancelar y reagendar en el mismo hueco → funciona.
+- Mismo paciente con dos doctores a la misma hora → rechazado.
+- Mismo profesional en dos sucursales a la misma hora → rechazado.
+- Un instante sobrevive a cambiar `-Duser.timezone` de la JVM.
+
+---
+
+## 9. Resumen de las correcciones aplicadas
+
+| Ref | Corrección | Bloque |
 |---|---|---|
-| `EXCLUDE` solapamiento por doctor | 4 | Sobre `practitioner_person_id` y `slot_blocking`, **no sobre la asignación**, ver 8.19. Parcial: excluye los estados cancelado y no presentado, ver 8.20. Requiere `btree_gist` y datos sin solapes previos |
-| `EXCLUDE` solapamiento por recurso | 4 | Sobre `resource_id` y `slot`, no `slot_blocking`, ver 8.21. Parcial: recurso no nulo y estado no cancelado |
-| `EXCLUDE` solape de horario del mismo doctor | 4 | `practitioner_schedules`, por asignación, día y rango de vigencia, ver 8.27 |
-| `UNIQUE` teléfono de persona | 2 | `(organization_id, normalized_phone)`. Recupera `uq_contact_phone_company`, ver 8.22 |
-| `UNIQUE` correo de persona | 2 | `(organization_id, email)`, ver 8.22 |
-| `UNIQUE` idempotencia de webhook | 6 | `(channel_connection_id, external_message_id)`. Requiere la columna nueva, ver 8.5 |
-| `UNIQUE` identidad por canal | 6 | Por organización, tipo y usuario externo, ver 8.2 |
-| `UNIQUE` documento de persona | 2 | Por organización, tipo y valor |
-| `UNIQUE` identificación fiscal | 1 | Por tipo y valor. Recupera `ruc`/`nit` únicos del esquema actual, ver 8.8 |
-| `UNIQUE` `webhook_token` | 6 | |
-| `UNIQUE` `user_person_links.person_id` y `(user_id, organization_id)` | 2 | Ver 8.1 y §9.2 |
-| `UNIQUE` `role_definitions (organization_id, code)` | 3 | Ver 8.7 |
-| `UNIQUE` `access_policies (organization_id, legal_entity_id, role_definition_id, key)` | 3 | `NULLS NOT DISTINCT`: sin esto la precedencia no es determinista, ver 8.6 |
-| `UNIQUE` `crm_message_events (message_id, event)` | 6 | Meta reenvía acuses, ver 8.13 |
-| `UNIQUE` `message_templates (organization_id, external_name, language_code)` | 8 | Ver 8.11 |
-| `UNIQUE` `team_members (team_id, principal_id)` | 3 | Ver 8.10 |
-| Índices de resolución de permisos | 3 | Incluye `scope_path` con `text_pattern_ops` |
+| C-1 | `users` sale de la lista de claves candidatas y de FK compuestas: `users.company_id` es nullable. La FK del profesional se crea en C contra `practitioners` | B, C |
+| C-2 | `@PreAuthorize` no se usa en ningún endpoint; el único match es un javadoc. El PR debe incluir el primer ejemplo completo | D |
+| C-3 | `ddl-auto=validate` en todos los perfiles deja `h2` sin arrancar. Se mantiene `create-drop` ahí como excepción documentada | B |
+| C-4 | El `EXCLUDE` del profesional va sobre `slot_blocking`; paciente y sillón sobre `slot` | E |
+| C-5 | `patients.person_ref` no estaba definido y duplicaba `crm_contacts.patient_id`. Se queda solo el segundo | C |
+| C-6 | La auditoría de ALLOW/DENY que D exige necesita columnas que ningún bloque creaba. Se añade la migración mínima a D | D |
+| C-7 | Nombres reales de tabla: `crm_conversations`, `crm_channel_connections`, `crm_channel_user_links` | B |
+| C-8 | `users.role` sobrevivía a la migración de roles. Se marca obsoleta en A y se elimina en D | A, D |
+| C-9 | El criterio de Firebase afecta a 15 ficheros, no 10. `FirebaseAuthExceptionHandlerTest` se reescribe, no se borra | A |
 
-## 6. Endpoints que rompen contrato, por fase
+---
 
-| Fase | Familias afectadas |
-|---|---|
-| 1 | `/api/v1/companies/**`, `/api/v1/branches/**` |
-| 2 | `/api/v1/users/**`, `/api/v1/auth/**`, `/api/v1/admin/**` |
-| 3 | `/api/v1/auth/me`, `/api/v1/external-doctor-access/**`, y la autorización de todos los demás |
-| 4 | `/api/v1/appointments/**` |
-| 6 | `/api/v1/crm/channels/**`, `/api/v1/crm/webhooks/**`, respuestas de conversación y mensaje |
+## 10. Decisiones pendientes
 
-Ningún endpoint sobrevive intacto a las fases 1 a 4. Conviene decidir de antemano
-si hay un frontend consumiendo esta API y si necesita convivencia de versiones.
-[NECESITA DECISIÓN, §9.6]
+**10.1. `users.company_id` nullable.** Con la corrección C-1 el bloque B no se
+bloquea, pero la pregunta sigue: ¿`users.company_id` pasa a `NOT NULL` con los
+administradores de plataforma modelados aparte, o `users` se queda fuera del
+esquema de FK compuestas de forma permanente? Afecta al bloque C.
 
-## 7. Dependencias nuevas
+**10.2. Futuro del perfil `h2`.** A partir del bloque E no puede reproducir el
+esquema real. O se elimina y se depende de Testcontainers, o se acepta que diverge
+y solo sirve para arrancar la aplicación.
 
-| Librería | Para qué | Estado |
-|---|---|---|
-| `org.testcontainers:postgresql` y `:junit-jupiter` | Tests de integración contra Postgres real | Pedida en el encargo |
-| — | `jsonb`, `tstzrange` e `inet` | No requieren librería; `tstzrange` e `inet` sí requieren un tipo propio de Hibernate, escrito a mano |
+**10.3. ArchUnit.** Dependencia nueva que el criterio de aceptación de D exige y
+que no está en ninguna lista aprobada.
 
-No propongo ninguna otra. En particular, no hacen falta ni motor de reglas ni
-librería de expresiones: el compilador de condiciones tiene un conjunto cerrado de
-operadores, que es justamente lo que el encargo exige.
+**10.4. Particionado y retención de `audit_logs`.** Auditar cada lectura clínica la
+convierte en la tabla que más crece. Convertirla a particionada después exige
+parada. Se puede diferir a un bloque F, pero la decisión conviene tomarla ahora.
 
-## 8. Correcciones aplicadas al diagrama
+**10.5. Zona horaria de los datos existentes.** Bloquea el bloque E. Si hay datos de
+Ecuador y Colombia mezclados, una sola zona de conversión desplaza citas y no es
+reversible.
 
-Cuatro puntos del diagrama que, leídos con el resto del encargo, resultaban
-contradictorios. **Están corregidos en `arquitectura-iclinic.mmd`**, con la
-justificación en la cabecera del propio fichero. Quedan aquí documentados porque
-cambian el trabajo de las fases 2, 3 y 6.
+**10.6. ¿Hay algún entorno con datos reales?** Bloquea la forma de los backfills de
+B y C y la detección de solapamientos de E. Si solo existe `dev-seed.sql`, se pueden
+asumir datos limpios y las migraciones se simplifican mucho.
 
-**8.1. `users.person_id` único impedía trabajar en dos organizaciones.**
-`persons` cuelga de `organizations`, así que un humano que trabaje en dos
-organizaciones tiene dos personas. Pero `users` era global, con correo único, y
-enlazaba a una sola persona. Ese humano no podía autenticarse una vez y actuar en
-las dos: la cadena de autorización pasa por `principals`, que sí es por
-organización, pero no había camino desde el usuario hasta el segundo principal.
-
-Corregido: `users` pierde `person_id` y aparece `user_person_links`
-(`user_id`, `person_id` único, `organization_id`, único por usuario y
-organización). Una credencial, N personas, una por organización; y cada persona
-con a lo sumo una credencial. Afecta a la fase 2: el backfill crea la fila de
-enlace en vez de una columna.
-
-**8.2. `crm_channel_user_links.external_user_id` con unicidad global reintroducía
-una fuga entre tenants.** Es el defecto que `specs/001-canales-multicuenta/spec.md`
-documenta hoy en el código: si el mismo número escribe a dos organizaciones, la
-segunda reutiliza el contacto de la primera.
-
-Corregido: la tabla lleva `organization_id` y la unicidad pasa a ser por
-organización, tipo de canal e identificador externo. Afecta a la fase 6.
-
-**8.3. El diagrama no mostraba `organization_id` en varias tablas que el encargo
-declara tenant-scoped**: `appointments`, `clinical_records`, `branches`,
-`resources`, `service_types`, `role_assignments` y otras. La regla del encargo dice
-que toda tabla tenant-scoped lo lleva denormalizado, y que ninguna query puede
-depender de que el desarrollador recuerde filtrar.
-
-Corregido: la columna está en las 37 tablas tenant-scoped. Quedan fuera
-`organizations` (es el tenant), `users` (credencial global), `modules` y
-`permission_catalog` (catálogos globales). Las aristas
-`organizations`–tabla no se dibujan: son una veintena que solo añaden ruido, y la
-columna es el contrato. Afecta a la fase 3, que ya contemplaba este trabajo.
-
-**8.4. `crm_conversations` perdía `status`, igual que `crm_messages`.** Para los
-mensajes es correcto, porque `crm_message_events` lo sustituye. Para las
-conversaciones no había sustituto: `window_expires_at` es la ventana de 24 horas,
-no dice si el hilo está abierto, y la bandeja lo necesita.
-
-Corregido: `crm_conversations.status` vuelve con `OPEN`, `PENDING`, `CLOSED`, los
-mismos valores que hoy. De paso, `crm_channel_user_links` recupera
-`external_chat_id`, `username` y `display_name`, que el diagrama no mostraba y el
-envío saliente necesita. Afecta a la fase 6.
-
-### 8.b Segunda revisión: constraints que faltaban y aristas sin columna
-
-Aplicada también al `.mmd`. Los puntos 8.5 a 8.8 son correcciones objetivas; los
-8.9 a 8.16 resuelven un hueco de modelado de la forma mínima y aditiva, y conviene
-confirmarlos antes de la fase que toque cada tabla.
-
-**8.5.** `crm_messages` gana `channel_connection_id`. El `UNIQUE` de idempotencia
-decía `conn+id`, pero la conexión solo se alcanzaba por JOIN a través de la
-conversación y un `UNIQUE` no atraviesa un JOIN. Sin esa columna el constraint que
-exiges como obligatorio era inimplementable. Fase 6.
-
-**8.6.** `access_policies` gana `UNIQUE (organization_id, legal_entity_id,
-role_definition_id, key)` con `NULLS NOT DISTINCT`. Sin él podían coexistir dos
-filas en el mismo escalón de precedencia con valores distintos de la misma clave, y
-la resolución dependía del planificador. Fase 3.
-
-**8.7.** `role_definitions` gana `UNIQUE (organization_id, code)`. Fase 3.
-
-**8.8.** `legal_entity_tax_ids` gana `UNIQUE (tax_id_type, tax_id_value)`. El
-esquema actual tiene `companies.ruc` y `companies.nit` únicos; perderlo era una
-regresión. Afecta al backfill de la fase 1: si hay dos empresas con el mismo RUC,
-la migración falla. Entra en la medición de §9.5.
-
-**8.9.** `principals.team_id`, nullable. El tipo `GROUP` no tenía a qué apuntar.
-Fase 3.
-
-**8.10.** `team_members` (equipo, principal). `teams` existía sin miembros, así que
-`crm_conversations.team_id` no permitía saber quién atiende un hilo. El miembro es
-un principal y no un usuario, para admitir cuentas de servicio. Fase 3, aunque la
-tabla no se use hasta la 6.
-
-**8.11.** `message_templates` gana `language_code` y `variables`. Una plantilla de
-Meta se identifica por nombre más idioma, y sin las variables no se puede
-renderizar. Fase 8.
-
-**8.12.** `clinical_records` gana `amends_record_id`. `locked` impedía editar lo
-firmado pero no había forma de enmendarlo. Fase 5.
-
-**8.13.** `crm_message_events` gana `UNIQUE (message_id, event)`. Fase 6.
-
-**8.14.** `contact_consents` gana `channel_type` y `occurred_at`. El
-consentimiento se da para un canal concreto y la fecha del cambio es el dato que se
-pide si hay reclamación. Fase 6.
-
-**8.15.** `campaigns` gana `timezone`. `quiet_hours` no tenía ancla: la campaña
-cuelga de una sociedad que puede tener sucursales en zonas distintas. Fase 8.
-
-**8.16.** `appointments` separa `slot` y `slot_blocking`. `slot` es lo que se pinta
-en la agenda; `slot_blocking` incluye `buffer_after_minutes` y es sobre el que va
-el `EXCLUDE`. Con un solo rango, o el buffer no se respetaba o la agenda mostraba
-huecos falsos. Fase 4.
-
-**8.17.** Retiradas dos aristas que no tenían columna que las respaldase:
-`practitioner_schedules` hacia `appointments` y `schedule_exceptions` hacia
-`practitioner_schedules`. Son reglas que se validan al agendar, no claves foráneas,
-y dibujadas como relación inducían a implementarlas como FK. Quedan documentadas
-como comentario en el `.mmd`. Corregida también la cardinalidad de
-`crm_messages` hacia `campaign_recipients`, que estaba invertida.
-
-### 8.c Tercera revisión: lo que solo aparece al ejecutar
-
-Repaso a fondo, tabla por tabla. Los diez primeros puntos son errores que no se
-ven leyendo el diagrama pero que se manifiestan en producción; están aplicados al
-`.mmd`. El último es de índices y no cambia el esquema.
-
-**8.18. `audit_logs` no tenía ninguna columna temporal.** Un registro de auditoría
-sin el "cuándo". Gana `occurred_at`. Gana además `actor_assignment_id` y
-`scope_path`: en un sistema clínico no basta con saber qué humano leyó una
-historia, hace falta saber con qué faceta actuaba y sobre qué ámbito decía tener
-permiso. Sin eso, la auditoría no responde a la pregunta que se le va a hacer.
-Fase 3.
-
-**8.19. El `EXCLUDE` de solapamiento iba sobre la asignación, no sobre la
-persona.** Es el error más caro del diagrama. Un doctor que atiende en dos
-sucursales tiene dos `role_assignments`, uno por ámbito. Un `EXCLUDE` sobre
-`practitioner_assignment_id` compara cosas distintas: las dos citas del mismo
-humano a la misma hora llevan asignaciones diferentes, el constraint no ve el
-choque y el doctor queda agendado en dos sitios a la vez. `appointments` gana
-`practitioner_person_id` denormalizado y el `EXCLUDE` va sobre él. Fase 4.
-
-**8.20. El `EXCLUDE` no podía excluir las citas canceladas.** Tal como estaba
-descrito, cancelar una cita y reagendar en el mismo hueco era imposible: la fila
-cancelada seguía ocupando el rango. Tiene que ser un `EXCLUDE` parcial que deje
-fuera los estados cancelado y no presentado. Fase 4.
-
-**8.21. El `EXCLUDE` de recurso no va sobre el mismo rango que el de doctor.** El
-sillón se libera cuando acaba la cita; el buffer es tiempo del doctor, no del
-sillón. Con los dos constraints sobre `slot_blocking` se bloquean sillones que
-están libres. El de recurso va sobre `slot`, el de persona sobre `slot_blocking`.
-Fase 4.
-
-**8.22. `person_phones` y `person_emails` no tenían ninguna unicidad.** El esquema
-actual sí la tiene (`uq_contact_phone_company`). Perderla rompe la deduplicación
-de contactos, que es el camino principal por el que se identifica a un paciente
-que escribe por WhatsApp: sin ella el mismo número puede colgar de tres personas
-distintas y la unificación deja de funcionar. Es una regresión, no una
-simplificación. Fase 2, y afecta al backfill, porque la normalización a E.164
-puede producir colisiones. Entra en la medición de §9.5.
-
-**8.23. `clinical_records` solo llegaba hasta `legal_entity_id`.** La jerarquía de
-ámbitos es organización, sociedad, sucursal. Un doctor con asignación de ámbito
-`/org/1/le/3/branch/7` no tenía por dónde filtrar las historias: veía las de toda
-la sociedad. Gana `branch_id`. Fase 5.
-
-**8.24. `clinical_records.content` sin versión de esquema ni hash.** Un odontograma
-cambia de forma con el tiempo; migrar cinco años de registros sin saber con qué
-versión se escribió cada uno es adivinar. Gana `content_schema_version`. Y
-`content_hash`: `locked` impedía editar desde la aplicación, no por debajo, y en
-un registro firmado la integridad hay que poder demostrarla. Fase 5.
-
-**8.25. `locked` era redundante con `signed_at` y podían contradecirse.** Firmado
-es `signed_at IS NOT NULL`. Columna retirada. Fase 5.
-
-**8.26. `role_assignments.active` no decía ni cuándo ni quién revocó.** Conceder
-está auditado con `granted_by_user_id` y `reason`; revocar no lo estaba.
-Sustituido por `revoked_at`, `revoked_by_user_id` y `revocation_reason`. Vigente
-pasa a ser `revoked_at` nulo y ahora dentro de `[valid_from, valid_until)`: una
-sola regla en vez de dos que podían discrepar. Fase 3.
-
-**8.27. `practitioner_schedules` no impedía solaparse consigo mismo.** Dos tramos
-del mismo doctor, el mismo día, con rangos de vigencia que se pisan. Necesita su
-propio `EXCLUDE`. Fase 4.
-
-**8.28. El índice de resolución de permisos estaba pedido al revés.** El encargo
-dice `scope_path` con `text_pattern_ops`, y eso sirve para la consulta *hacia
-abajo*: "todo lo que cuelga de `/org/1/le/3`", que es la de los listados
-administrativos. Pero el chequeo de permiso va *hacia arriba*: dado el recurso
-`/org/1/le/3/branch/7`, qué asignaciones lo cubren. Eso no es un `LIKE` con
-comodín al final; es una igualdad contra la lista de ancestros del recurso,
-calculada en la aplicación, que son cinco como mucho. Y eso quiere un btree normal
-sobre `(principal_id, scope_path)`. Hacen falta los dos índices, por motivos
-distintos. Si solo se crea el de `text_pattern_ops`, la consulta caliente del
-sistema, la que corre en cada petición, no lo usa. Fase 3, sin cambio de esquema.
-
-### 8.d Lo que queda sin resolver y no puedo decidir yo
-
-Siete puntos más del repaso que no son errores de transcripción sino decisiones de
-producto o de operación. Están listados en la cabecera del `.mmd` y detallados en
-§9.7 a §9.13.
-
-## 9. Decisiones que necesito antes de empezar
-
-No las resuelvo yo. Cada una bloquea la fase indicada.
-
-**9.1. Zonas horarias (bloquea fases 0, 1 y 4).** ¿Qué zona horaria asigno a las
-sucursales existentes, y en qué zona están interpretados los `timestamp` sin zona
-que hay hoy en `appointments`, `branch_schedules` y `branch_blocked_slots`? Si es
-la del servidor, necesito saber cuál era en el momento en que se escribieron.
-
-**9.2. Identidad federada (bloquea fase 2).** El objetivo muestra `password_hash` y
-el código usa Firebase con `external_auth_id`. ¿Se mantiene Firebase, se migra a
-credenciales propias, o conviven? Y, ligado a 8.1: ¿un humano que trabaja en dos
-organizaciones debe poder autenticarse una sola vez?
-
-**9.3. Catálogo de permisos (bloquea fase 3).** Necesito el mapeo de los siete roles
-actuales a `actions` y `notActions`, o al menos el criterio. Hoy la autorización
-vive como lista de rutas en `SecurityConfig` y no hay catálogo del que derivarlo.
-Ligado: qué claves de `access_policies` existen además de
-`clinical.access_before`, y cuál es su valor por defecto.
-
-**9.4. Resuelta.** Era la confirmación de 8.2 y 8.4, ya aplicada al diagrama.
-Queda como aviso, no como bloqueo: si no estás de acuerdo con alguna de las cuatro
-correcciones, hay que revertirla en el `.mmd` antes de la fase correspondiente.
-
-**9.5. Datos existentes (bloquea fases 1, 2, 4 y 6).** ¿Hay algún entorno con datos
-reales, o solo local con `db/seed/dev-seed.sql`? De la respuesta depende que los
-backfills tengan que ser defensivos o puedan asumir datos limpios. En concreto
-necesito saber si hay citas solapadas, teléfonos que colisionarían al normalizar a
-E.164, y contactos compartidos entre empresas.
-
-**9.6. Convivencia de versiones de API (bloquea fase 1).** ¿Hay un frontend
-consumiendo esta API? Si lo hay, ¿las rutas viejas deben seguir respondiendo
-durante la migración, o se coordina un corte?
-
-**9.7. Facturación (bloquea fase 1).** El encargo dice que de la sociedad cuelgan
-"sucursales, canales, expedientes y facturación". No hay ninguna tabla de
-facturación en el diagrama. O falta, o está fuera del alcance de esta migración.
-Si va a existir, conviene saberlo antes de fijar `legal_entities`: arrastra series
-de numeración fiscal por sociedad y por país, y esa numeración tiene requisitos
-legales de continuidad que condicionan el modelo.
-
-**9.8. Semántica de `persons.merged_into_id` (bloquea fase 2).** Al fusionar la
-persona A en la B, ¿se reescriben las claves foráneas de A hacia B y queda una
-lápida, o A conserva sus filas y toda lectura tiene que seguir la cadena? La
-segunda opción mete un recursivo en el camino caliente de la lectura clínica. La
-primera es irreversible. Hay que elegir antes de crear la columna.
-
-**9.9. Asignaciones de denegación (bloquea fase 3).** Hoy la única forma de decir
-"como el rol ADMIN pero sin ver X" es clonar la definición de rol. Azure lo
-resuelve con asignaciones de tipo DENY evaluadas después de las de concesión. Sin
-ellas, cada excepción es un rol nuevo y el catálogo se multiplica.
-
-**9.10. `is_platform_admin` (bloquea fase 3).** Es un booleano que salta el modelo
-de permisos entero: quien lo tiene lee la historia clínica de cualquier paciente
-de cualquier tenant, sin caducidad, sin motivo y sin ámbito. Es exactamente por lo
-que pregunta un auditor. La alternativa es que ese acceso pase por una asignación
-temporal, motivada y auditada, del mismo modo que el acceso de un doctor externo.
-
-**9.11. Cifrado del contenido de `crm_messages` (bloquea fase 6).** Los tokens de
-canal se cifran; el cuerpo de los mensajes no. Por una conversación de WhatsApp
-con un paciente viaja dato de salud.
-
-**9.12. Particionado de `audit_logs` y `crm_messages` (bloquea fases 3 y 6).**
-Auditar cada lectura de historia clínica, como exige el encargo, convierte
-`audit_logs` en la tabla que más crece del sistema. Convertirla a particionada
-después exige parada; decidirlo ahora no cuesta nada.
-
-**9.13. RLS frente a `@Filter` de Hibernate (bloquea fase 3).** El encargo admite
-las dos, pero no son equivalentes: `@Filter` no se aplica ni a `findById` ni a la
-carga perezosa de un `@ManyToOne`, así que `repository.findById(idDeOtroTenant)`
-sigue devolviendo la fila. Si la regla es que ninguna consulta pueda depender de
-que el desarrollador recuerde filtrar, la única de las dos que la cumple es RLS.
-Recomiendo RLS como mecanismo principal y `@Filter` como refuerzo.
+**10.7. Publicar el trabajo local.** Un commit sin subir más dos ficheros
+modificados, antes de abrir el primer PR.

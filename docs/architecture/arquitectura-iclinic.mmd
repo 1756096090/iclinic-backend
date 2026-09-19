@@ -1,214 +1,408 @@
 %% =============================================================================
 %% Arquitectura objetivo iClinic
 %%
-%% CONVENCIONES QUE NO SE DIBUJAN (para no repetirlas 42 veces):
-%%   - Toda tabla lleva created_at y updated_at timestamptz. SIEMPRE timestamptz,
-%%     nunca timestamp: el "hoy" se calcula en la zona de la sucursal.
-%%   - Toda tabla mutable por usuario lleva version int para bloqueo optimista.
-%%     Sin el, dos recepcionistas editando la misma cita es last-write-wins.
-%%   - Baja logica: deleted_at timestamptz. NO se usa boolean active en tablas
-%%     nuevas: un booleano no dice cuando ni quien, y acaba contradiciendo a las
-%%     columnas de vigencia.
-%%   - organization_id denormalizado en toda tabla tenant-scoped. NO se dibuja la
-%%     arista organizations--X: son ~20 que solo anaden ruido. Fuera por no ser
-%%     tenant-scoped: users, modules, permission_catalog.
+%% FUENTE DE VERDAD: los scripts SQL validados contra PostgreSQL 16.13
+%%   iclinic-core-schema.sql   -> secciones 1 a 7 de este diagrama
+%%   iclinic-authz-schema.sql  -> seccion 4 (autorizacion)
+%%   iclinic-rls.sql           -> aislamiento, no se dibuja
+%% Este .mmd es la vista, no el contrato. Si difieren, manda el SQL.
+%%
+%% Las secciones 8 a 10 (CRM, modulos, campanas) NO estan congeladas en SQL
+%% todavia: se conservan de la revision anterior y estan marcadas.
 %%
 %% ----------------------------------------------------------------------------
-%% REVISION 1 - contradicciones del modelo (MIGRATION_PLAN.md §8)
+%% CAMBIO DE FONDO: KEYCLOAK
 %% ----------------------------------------------------------------------------
-%%   1. users.person_id 1:1 impedia que un humano trabajase en dos
-%%      organizaciones. Sustituido por user_person_links.
-%%   2. crm_channel_user_links.external_user_id con UNIQUE global reintroducia la
-%%      fuga entre tenants. Ahora UNIQUE org+type+user.
-%%   3. organization_id denormalizado en toda tabla tenant-scoped.
-%%   4. crm_conversations recupera status: window_expires_at es la ventana de
-%%      24h, no el estado del hilo.
+%% La identidad sale de la base de datos. Reparto de responsabilidades:
+%%
+%%   Keycloak    autenticacion, MFA, sesiones, refresh, roles de cliente,
+%%               service accounts. Es el duenno del sujeto.
+%%   PostgreSQL  datos del dominio, aislamiento por RLS, integridad por FK
+%%               compuestas, invariantes por EXCLUDE y triggers.
+%%   Spring Boot autorizacion de negocio: AuthorizationService, que es la
+%%               traduccion en Java de authz_patient_read_path().
+%%
+%% Consecuencias sobre el modelo anterior:
+%%
+%%   - users deja de ser una credencial y pasa a ser la PROYECCION del sujeto
+%%     de Keycloak: keycloak_user_id uuid UNIQUE, subject_type HUMAN o
+%%     SERVICE_ACCOUNT. NO hay password_hash. NO hay external_auth_id de
+%%     Firebase. Anade tokens_valid_from como kill-switch de sesiones vivas.
+%%
+%%   - Desaparecen principals, role_definitions, role_assignments,
+%%     access_policies y permission_catalog. El modelo ABAC con condiciones
+%%     compiladas a SQL se sustituye por algo que ya esta escrito y probado:
+%%       organization_members        pertenencia al tenant
+%%       organization_member_roles   N roles por miembro, enum cerrado
+%%       member_branches             ambito por sucursal, con vigencia
+%%       practitioner_branches       donde ejerce, con vigencia
+%%       patient_care_team           relacion clinica declarada
+%%       appointments                relacion clinica derivada
+%%       access_grants               SOLO la excepcion, siempre con caducidad
+%%     La pregunta "puede este miembro leer a este paciente" la responde la
+%%     funcion authz_patient_read_path, que devuelve LA VIA (ORG_ADMIN,
+%%     BRANCH_MANAGER, CARE_TEAM, APPOINTMENT, GRANT_PATIENT, GRANT_SCOPE)
+%%     para poder auditarla, no un booleano.
+%%
+%%   - Aparecen practitioners y patients como tablas propias, colgando de
+%%     persons. La faceta deja de ser una fila generica de role_assignments y
+%%     pasa a ser una tabla con lo que cada faceta necesita de verdad:
+%%     licencia y especialidades el profesional, numero de historia el paciente.
+%%
+%%   - El ambito jerarquico por scope_path desaparece. No hay materialized path
+%%     que mantener sincronizado ni indice text_pattern_ops: el ambito son FK
+%%     compuestas reales (organization_id, branch_id) y la jerarquia la
+%%     recorren los JOIN.
 %%
 %% ----------------------------------------------------------------------------
-%% REVISION 2 - constraints que faltaban y aristas sin columna (§8.b)
+%% CONVENCIONES QUE NO SE DIBUJAN
 %% ----------------------------------------------------------------------------
-%%   5. crm_messages gana channel_connection_id: el UNIQUE de idempotencia decia
-%%      "conn+id" pero un UNIQUE no atraviesa un JOIN.
-%%   6. access_policies gana UNIQUE org+le+role+key NULLS NOT DISTINCT.
-%%   7. role_definitions gana UNIQUE org+code.
-%%   8. legal_entity_tax_ids gana UNIQUE type+value.
-%%   9. principals.team_id: el tipo GROUP no tenia a que apuntar.
-%%  10. team_members: teams existia sin miembros.
-%%  11. message_templates gana language_code y variables.
-%%  12. clinical_records gana amends_record_id.
-%%  13. crm_message_events gana UNIQUE message_id+event.
-%%  14. contact_consents gana channel_type y occurred_at.
-%%  15. campaigns gana timezone.
-%%  16. appointments separa slot y slot_blocking.
-%%  17. Retiradas dos aristas sin columna que las respaldase.
+%%   - created_at / updated_at timestamptz NOT NULL DEFAULT now() en toda tabla.
+%%     SIEMPRE timestamptz: el "hoy" se calcula en branches.timezone.
+%%   - version int NOT NULL DEFAULT 0 para bloqueo optimista en toda tabla
+%%     mutable por usuario.
+%%   - deleted_at timestamptz para baja logica. EXCEPCION: clinical_records y
+%%     audit_logs NO la tienen, son append-only de verdad.
+%%   - organization_id en toda tabla tenant-scoped, con politica RLS generada
+%%     en bucle sobre esa columna. Fuera por no ser tenant-scoped, y son las
+%%     unicas cuatro: organizations (es el tenant), users (proyeccion global
+%%     de Keycloak), specialties y modules (catalogos globales).
+%%   - UNIQUE (organization_id, id) en todo padre tenant-scoped: es la clave
+%%     candidata que respalda las FK compuestas. Una FK de N columnas exige un
+%%     UNIQUE de EXACTAMENTE esas N columnas.
 %%
 %% ----------------------------------------------------------------------------
-%% REVISION 3 - repaso a fondo. Errores que solo aparecen al ejecutar (§8.c)
+%% DECISION BLOQUEANTE: organizations O companies, no las dos
 %% ----------------------------------------------------------------------------
-%%
-%%  18. audit_logs NO TENIA COLUMNA TEMPORAL. Un registro de auditoria sin
-%%      cuando. Gana occurred_at, y ademas actor_assignment_id y scope_path:
-%%      saber que humano leyo una historia no basta, hay que saber con que
-%%      faceta y sobre que ambito decia tener permiso.
-%%
-%%  19. EL EXCLUDE DE SOLAPAMIENTO IBA SOBRE LA ASIGNACION, NO SOBRE LA PERSONA.
-%%      Un doctor que trabaja en dos sucursales tiene DOS role_assignments. El
-%%      EXCLUDE sobre practitioner_assignment_id no ve el choque entre las dos:
-%%      el mismo humano queda agendado dos veces a la misma hora en sitios
-%%      distintos. appointments gana practitioner_person_id denormalizado y el
-%%      EXCLUDE va sobre el.
-%%
-%%  20. EL EXCLUDE NO PODIA EXCLUIR LAS CANCELADAS. Tal como estaba, cancelar y
-%%      reagendar en el mismo hueco era imposible. Es un EXCLUDE parcial:
-%%      WHERE status NOT IN ('CANCELLED','NO_SHOW').
-%%
-%%  21. El EXCLUDE de recurso va sobre slot, no sobre slot_blocking: el sillon
-%%      se libera al acabar la cita, el buffer es del doctor. Con los dos sobre
-%%      slot_blocking se bloqueaban sillones de mas.
-%%
-%%  22. person_phones y person_emails no tenian ninguna unicidad. El esquema
-%%      ACTUAL si la tiene (uq_contact_phone_company). Perderla rompe la
-%%      deduplicacion de contactos, que es justo el camino principal por el que
-%%      se identifica a un paciente que escribe por WhatsApp.
-%%
-%%  23. clinical_records solo llegaba hasta legal_entity_id. Un doctor con
-%%      asignacion de ambito /branch/7 no podia filtrarse: veia las historias de
-%%      toda la sociedad. Gana branch_id.
-%%
-%%  24. clinical_records.content jsonb sin version de esquema. Un odontograma
-%%      cambia de forma; migrar cinco anos de registros sin saber con que
-%%      version se escribio cada uno es adivinar. Gana content_schema_version.
-%%      Y content_hash: locked no impide que alguien edite por debajo.
-%%
-%%  25. locked era redundante con signed_at y podian contradecirse. Firmado es
-%%      signed_at IS NOT NULL. Columna retirada.
-%%
-%%  26. role_assignments.active no dice ni cuando ni quien revoco. Sustituido
-%%      por revoked_at / revoked_by_user_id / revocation_reason. Conceder esta
-%%      auditado (granted_by_user_id, reason); revocar tambien debe estarlo.
-%%      Vigente = revoked_at IS NULL AND now() dentro de [valid_from, valid_until).
-%%
-%%  27. practitioner_schedules no impedia solaparse consigo mismo: dos tramos
-%%      del mismo doctor, mismo dia, mismas horas, ambos vigentes. EXCLUDE.
-%%
-%%  28. INDICE DE RESOLUCION DE PERMISOS: text_pattern_ops NO sirve para la
-%%      consulta que de verdad se hace. El chequeo va HACIA ARRIBA ("dado
-%%      /org/1/le/3/branch/7, que asignaciones lo cubren"), y eso es
-%%      scope_path = ANY(<ancestros>), o sea btree normal sobre
-%%      (principal_id, scope_path). text_pattern_ops sirve para la consulta
-%%      HACIA ABAJO ("todo lo que cuelga de este ambito"), que es la de listados
-%%      administrativos. Hacen falta LOS DOS indices, por motivos distintos.
-%%
-%% PENDIENTE DE DECISION (no lo resuelvo yo, ver MIGRATION_PLAN.md §9):
-%%   - Facturacion: el encargo dice que cuelga de la sociedad. NO HAY NINGUNA
-%%     TABLA de facturacion en el diagrama.
-%%   - Semantica de persons.merged_into_id: si la fusion reescribe las FK o si
-%%     hay que seguir la cadena en cada lectura clinica.
-%%   - Asignaciones DENY: hoy solo hay notActions dentro del rol, lo que obliga
-%%     a clonar roles para cada excepcion.
-%%   - is_platform_admin como booleano salta todo el modelo de permisos.
-%%   - Cifrado del contenido de crm_messages: por ahi viaja dato de salud.
-%%   - Particionado de audit_logs y crm_messages.
-%%   - RLS frente a @Filter de Hibernate: NO son equivalentes.
+%% El SQL validado dice organizations / organization_members /
+%% organization_member_roles. El §0 del prompt de migracion dice, literal:
+%% "DECISION TOMADA: se mantiene company. NO renombres Company->Organization".
+%% Se contradicen. Este diagrama usa los nombres del SQL porque es el artefacto
+%% validado; si gana `company`, la sustitucion es mecanica y afecta a todo.
+%% Ver MIGRATION_PLAN.md §10.1.
 %% =============================================================================
 
 erDiagram
     %% ========== 1. TENENCIA ==========
     organizations {
         bigint id PK "EL TENANT"
+        uuid keycloak_organization_id UK "nullable"
         varchar name
         varchar slug UK
         varchar plan
+        varchar status "ACTIVE"
     }
     legal_entities {
         bigint id PK
-        bigint organization_id FK
-        varchar country_code "EC CO US"
+        bigint organization_id FK "UNIQUE org+id"
+        char country_code "EC CO"
         varchar legal_name
-        varchar currency_code
+        char currency_code
         jsonb fiscal_config
     }
     legal_entity_tax_ids {
         bigint id PK
-        bigint organization_id FK "denormalizado"
-        bigint legal_entity_id FK
+        bigint organization_id FK
+        bigint legal_entity_id FK "FK compuesta org+le"
         varchar tax_id_type "RUC NIT EIN"
-        varchar tax_id_value "UNIQUE type+value"
+        varchar tax_id_value
     }
     branches {
         bigint id PK
-        bigint organization_id FK "denormalizado"
-        bigint legal_entity_id FK
+        bigint organization_id FK "UNIQUE org+id y org+le+id"
+        bigint legal_entity_id FK "FK compuesta org+le"
         varchar branch_type
         varchar name
-        varchar timezone "define el HOY - IANA, no offset"
+        varchar timezone "IANA - define el HOY - CHECK de formato"
         boolean has_laboratory
     }
-    resources {
-        bigint id PK
-        bigint organization_id FK "denormalizado"
-        bigint branch_id FK
+    bookable_resources {
+        bigint id PK "sillon, sala"
+        bigint organization_id FK "UNIQUE org+branch+id"
+        bigint branch_id FK "FK compuesta org+branch"
         varchar resource_type "CHAIR ROOM"
         varchar name
     }
 
-    %% ========== 2. PERSONA ==========
+    %% ========== 2. PERSONAS ==========
     persons {
-        bigint id PK
-        bigint organization_id FK
+        bigint id PK "el humano"
+        bigint organization_id FK "UNIQUE org+id"
         varchar first_name
         varchar last_name
         date birth_date
-        bigint merged_into_id "tombstone - ver decision abierta"
+        bigint merged_into_id FK "FK compuesta: no se fusiona entre tenants"
     }
     person_identifiers {
         bigint id PK
-        bigint organization_id FK "denormalizado"
-        bigint person_id FK
+        bigint organization_id FK
+        bigint person_id FK "FK compuesta org+person"
         varchar id_type "CEDULA PASSPORT"
-        varchar id_value "UNIQUE org+type+value"
+        varchar id_value "UNIQUE parcial org+type+value"
     }
     person_phones {
         bigint id PK
-        bigint organization_id FK "denormalizado"
-        bigint person_id FK
-        varchar normalized_phone "E164 - UNIQUE org+phone - dedup"
+        bigint organization_id FK
+        bigint person_id FK "FK compuesta org+person"
+        varchar normalized_phone "CHECK E164 - UNIQUE parcial org+person+phone"
         boolean whatsapp_capable
+        boolean is_primary
     }
     person_emails {
         bigint id PK
-        bigint organization_id FK "denormalizado"
-        bigint person_id FK
-        varchar email "UNIQUE org+email"
+        bigint organization_id FK
+        bigint person_id FK "FK compuesta org+person"
+        varchar email
+        varchar email_normalized "GENERATED lower(email) - UNIQUE parcial"
         boolean verified
     }
-    person_addresses {
-        bigint id PK
-        bigint organization_id FK "denormalizado"
-        bigint person_id FK
-        varchar country_code
-        varchar line1
+
+    %% ========== 3. IDENTIDAD: PROYECCION DE KEYCLOAK ==========
+    users {
+        bigint id PK "NO tenant-scoped - NO hay RLS aqui"
+        uuid keycloak_user_id UK "el sub de Keycloak - fuente de verdad"
+        varchar subject_type "CHECK HUMAN o SERVICE_ACCOUNT"
+        varchar keycloak_client_id "azp - obligatorio si SERVICE_ACCOUNT"
+        varchar display_name
+        varchar email "copia de conveniencia, no credencial"
+        varchar status
+        timestamptz tokens_valid_from "kill-switch: jwt.iat menor = 401"
+    }
+    organization_members {
+        bigint id PK "LA PUERTA DEL TENANT"
+        bigint organization_id FK "UNIQUE org+id"
+        bigint user_id FK "UNIQUE org+user"
+        bigint person_id FK "nullable - UNIQUE org+person - FK compuesta"
+        varchar status
+        timestamptz joined_at
+    }
+    organization_member_roles {
+        bigint organization_id PK "PK org+member+role"
+        bigint member_id PK "FK compuesta, ON DELETE CASCADE"
+        varchar role_code PK "CHECK enum cerrado - N roles por miembro"
+        bigint granted_by_user_id FK
+        timestamptz granted_at
+    }
+    member_branches {
+        bigint organization_id PK "PK org+member+branch"
+        bigint member_id PK "FK compuesta"
+        bigint branch_id PK "FK compuesta - no cruza tenant"
+        timestamptz valid_from
+        timestamptz valid_until "NULL = permanente"
+        timestamptz revoked_at
+        bigint revoked_by_user_id FK
+        varchar revocation_reason
+    }
+    service_account_grants {
+        bigint organization_id PK "PK org+user"
+        bigint user_id PK "un SERVICE_ACCOUNT de Keycloak"
+        text scopes "text[] - CHECK cardinality mayor que 0"
+        bigint legal_entity_id FK "nullable - FK compuesta"
+        varchar status
     }
 
-    %% ========== 3. ACCESO ==========
-    users {
-        bigint id PK "credencial global - NO tenant-scoped"
-        varchar email UK "credencial"
-        varchar password_hash
-        boolean is_platform_admin "salta el modelo - ver decision abierta"
+    %% ========== 4. FACETAS: PROFESIONAL Y PACIENTE ==========
+    practitioners {
+        bigint id PK "la faceta que ejerce"
+        bigint organization_id FK "UNIQUE org+id y org+person"
+        bigint person_id FK "FK compuesta org+person"
+        varchar license_number "UNIQUE parcial org+country+number"
+        char license_country
+        varchar license_status
+        varchar status
     }
-    user_person_links {
-        bigint id PK "un humano en N organizaciones"
-        bigint user_id FK
-        bigint person_id FK "UNIQUE - una person, una credencial"
-        bigint organization_id FK "UNIQUE user+org"
+    specialties {
+        varchar code PK "catalogo GLOBAL - sin organization_id, sin RLS"
+        varchar name
+        varchar discipline
     }
-    principals {
-        bigint id PK
-        varchar principal_type "PERSON GROUP SERVICE"
-        bigint person_id FK "solo si PERSON"
-        bigint team_id FK "solo si GROUP"
+    practitioner_specialties {
+        bigint organization_id PK "PK org+prac+specialty"
+        bigint practitioner_id PK "FK compuesta, ON DELETE CASCADE"
+        varchar specialty_code PK "FK a specialties"
+        boolean is_primary
+    }
+    practitioner_branches {
+        bigint organization_id PK "PK org+prac+branch - donde ejerce"
+        bigint practitioner_id PK "FK compuesta"
+        bigint branch_id PK "FK compuesta"
+        boolean is_primary
+        timestamptz valid_from
+        timestamptz valid_until "NULL = permanente"
+        timestamptz revoked_at
+        bigint revoked_by_user_id FK
+        varchar revocation_reason
+    }
+    patients {
+        bigint id PK "la faceta que se atiende"
+        bigint organization_id FK "UNIQUE org+id y org+person"
+        bigint person_id FK "FK compuesta org+person"
+        varchar medical_record_number "UNIQUE org+mrn"
+        bigint primary_branch_id FK "nullable - FK compuesta"
+        varchar status
+    }
+    patient_care_team {
+        bigint organization_id PK "PK org+patient+prac+role"
+        bigint patient_id PK "FK compuesta"
+        bigint practitioner_id PK "FK compuesta"
+        varchar care_role PK "CHECK PRIMARY TREATING ASSISTING"
+        timestamptz valid_from
+        timestamptz valid_until "CHECK: PRIMARY no admite caducidad"
+        timestamptz revoked_at
+        bigint revoked_by_user_id FK
+    }
+    access_grants {
+        bigint id PK "SOLO la excepcion, nunca el acceso normal"
         bigint organization_id FK
+        bigint grantee_member_id FK "FK compuesta a organization_members"
+        bigint patient_id FK "nullable - FK compuesta"
+        bigint branch_id FK "nullable - FK compuesta - CHECK excluyentes"
+        varchar scope_kind "GENERATED PATIENT BRANCH u ORGANIZATION"
+        varchar permission "CHECK enum - clinical.sign NO se delega"
+        varchar reason_code "CHECK enum - ORGANIZATION solo AUDIT o SUPPORT"
+        varchar justification "CHECK longitud minima 10"
+        bigint granted_by_user_id FK
+        timestamptz valid_from
+        timestamptz valid_until "CHECK obligatoria salvo COVERAGE"
+        tstzrange validity "GENERATED - EXCLUDE antiduplicados"
+        timestamptz revoked_at
+        bigint revoked_by_user_id FK
+        varchar revocation_reason
+    }
+
+    %% ========== 5. AGENDA ==========
+    service_types {
+        bigint id PK
+        bigint organization_id FK "UNIQUE org+id"
+        bigint legal_entity_id FK "FK compuesta"
+        varchar name
+        int default_duration_minutes "CHECK 5 a 600"
+        int buffer_after_minutes "CHECK 0 a 240"
+        boolean requires_laboratory
+    }
+    practitioner_schedules {
+        bigint id PK
+        bigint organization_id FK
+        bigint practitioner_id FK "FK compuesta a practitioner_branches"
+        bigint branch_id FK "el trio org+prac+branch debe existir"
+        smallint day_of_week "CHECK 1 a 7"
+        timerange work_period "hora de pared - tipo RANGE propio"
+        daterange validity "horario versionado"
+    }
+    schedule_exceptions {
+        bigint id PK
+        bigint organization_id FK
+        bigint practitioner_id FK "NULL = toda la sucursal"
+        bigint branch_id FK "FK compuesta"
+        varchar exception_type "CHECK BLOCK EXTRA_SHIFT HOLIDAY"
+        tstzrange period
+        varchar reason
+    }
+    appointments {
+        bigint id PK
+        bigint organization_id FK
+        bigint legal_entity_id FK "FK triple org+le+branch: no se contradicen"
+        bigint branch_id FK
+        bigint patient_id FK "FK compuesta - la faceta, no la persona"
+        bigint practitioner_id FK "FK triple: debe ejercer en esa sucursal"
+        bigint service_type_id FK "FK compuesta"
+        bigint resource_id FK "nullable - FK triple org+branch+resource"
+        tstzrange slot "la cita - EXCLUDE de paciente y de sillon"
+        int buffer_after_minutes "CHECK 0 a 240"
+        tstzrange slot_blocking "slot + buffer - EXCLUDE de profesional"
+        timestamptz scheduled_start "GENERATED lower(slot)"
+        varchar status "CHECK 7 estados"
+        timestamptz attended_at "CHECK solo IN_PROGRESS o COMPLETED"
+    }
+    appointment_events {
+        bigint id PK
+        bigint organization_id FK
+        bigint appointment_id FK
+        varchar event
+        bigint actor_user_id FK "nullable si SYSTEM"
+        varchar actor_type "CHECK HUMAN SERVICE_ACCOUNT SYSTEM"
+        varchar channel
+        jsonb payload
+        timestamptz occurred_at
+    }
+
+    %% ========== 6. HISTORIA CLINICA ==========
+    clinical_records {
+        bigint id PK "APPEND-ONLY: sin deleted_at, trigger prohibe DELETE"
+        bigint organization_id FK
+        bigint legal_entity_id FK "FK triple con branch"
+        bigint branch_id FK "sin esto el ambito de sucursal no filtra"
+        bigint patient_id FK "UNIQUE org+patient+id - ancla la historia"
+        bigint appointment_id FK "contexto - nullable"
+        bigint author_user_id FK "quien lo escribio"
+        bigint author_practitioner_id FK "nullable - FK compuesta"
+        jsonb content
+        varchar record_type
+        int content_schema_version "CHECK mayor o igual a 1"
+        char content_hash "sha256"
+        bytea content_signature "firma real, no solo hash"
+        varchar signature_key_id
+        varchar signature_alg
+        timestamptz signed_at "firmado = inmutable por trigger"
+        bigint amends_record_id FK "UNIQUE: la cadena no se bifurca"
+    }
+
+    %% ========== 7. AUDITORIA ==========
+    audit_logs {
+        bigint id PK "PK compuesta occurred_at+id - PARTICIONADA POR MES"
+        timestamptz occurred_at PK "la clave de particion"
+        bigint organization_id FK "nullable: acciones de plataforma"
+        bigint legal_entity_id FK
+        bigint branch_id FK
+        varchar actor_type "CHECK HUMAN SERVICE_ACCOUNT SYSTEM"
+        uuid actor_subject "el sub de Keycloak - vale para humano y servicio"
+        bigint actor_user_id "join comodo, no la fuente de verdad"
+        varchar actor_client_id "azp del service account"
+        bigint on_behalf_of_user_id "suplantacion de soporte"
+        varchar action
+        varchar entity_type
+        bigint entity_id
+        varchar outcome "CHECK ALLOW DENY ERROR - el DENY es lo que detecta sondeos"
+        varchar deny_reason
+        uuid request_id
+        varchar session_id
+        inet ip_address
+        varchar user_agent
+        jsonb metadata "incluye la VIA de concesion"
+    }
+
+    %% ========== 8. CRM OMNICANAL (NO congelado en SQL) ==========
+    crm_channel_connections {
+        bigint id PK
+        bigint organization_id FK
+        bigint legal_entity_id FK "el numero es de una sociedad"
+        varchar channel_type "WHATSAPP TELEGRAM MESSENGER"
+        varchar external_account_id "UNIQUE type+account - una cuenta, un tenant"
+        varchar access_token_encrypted "AES-GCM, clave por entorno"
+        uuid webhook_token UK
+        varchar status
+    }
+    channel_connection_branches {
+        bigint organization_id FK
+        bigint connection_id FK
+        bigint branch_id FK
+    }
+    crm_contacts {
+        bigint id PK
+        bigint organization_id FK
+        bigint person_id FK "nullable hasta identificar - NO es el paciente"
+        varchar display_name
+        varchar status "LEAD ACTIVE ARCHIVED"
+    }
+    crm_channel_user_links {
+        bigint id PK
+        bigint organization_id FK "sin esto se fugan contactos entre tenants"
+        bigint contact_id FK
+        varchar channel_type
+        varchar external_user_id "UNIQUE org+type+user"
+        varchar external_chat_id "destino de envio"
+        varchar username
+        varchar display_name
     }
     teams {
         bigint id PK
@@ -217,162 +411,19 @@ erDiagram
     }
     team_members {
         bigint id PK
-        bigint organization_id FK "denormalizado"
+        bigint organization_id FK
         bigint team_id FK
-        bigint principal_id FK "UNIQUE team+principal"
-    }
-    role_definitions {
-        bigint id PK
-        bigint organization_id FK "NULL = rol de sistema"
-        varchar code "UNIQUE org+code - DOCTOR PATIENT RECEPTION"
-        jsonb permissions "actions y notActions - validar contra catalogo"
-        jsonb default_conditions
-    }
-    role_assignments {
-        bigint id PK "ES la faceta: paciente, doctor"
-        bigint organization_id FK "denormalizado"
-        bigint principal_id FK
-        bigint role_definition_id FK
-        varchar scope_path "/org/1/le/3/branch/7 - btree Y text_pattern_ops"
-        jsonb condition "ABAC con @policy - compila a SQL"
-        jsonb attributes "licencia, num expediente"
-        bigint granted_by_user_id FK
-        varchar reason "obligatorio si scope de recurso"
-        timestamptz valid_from
-        timestamptz valid_until "NULL = permanente"
-        timestamptz revoked_at "NULL = vigente"
-        bigint revoked_by_user_id FK
-        varchar revocation_reason
-    }
-    access_policies {
-        bigint id PK
-        bigint organization_id FK
-        bigint legal_entity_id FK "nullable"
-        bigint role_definition_id FK "nullable"
-        varchar key "UNIQUE org+le+role+key NULLS NOT DISTINCT"
-        jsonb value "P1D - EDITABLE"
-        bigint updated_by_user_id FK
-    }
-    permission_catalog {
-        varchar code PK "clinical.record.read"
-        varchar module_code FK "lo define el codigo"
-        varchar description
-    }
-
-    %% ========== 4. CLINICO Y AGENDA ==========
-    clinical_records {
-        bigint id PK
-        bigint organization_id FK "denormalizado"
-        bigint legal_entity_id FK
-        bigint branch_id FK "sin esto el scope de sucursal no filtra"
-        bigint person_id FK "ancla al humano, no al rol"
-        bigint appointment_id FK "contexto - nullable"
-        bigint author_assignment_id FK "quien firmo"
-        bigint amends_record_id FK "cadena de enmiendas"
-        varchar record_type "ODONTOGRAM NOTE PRESCRIPTION"
-        jsonb content
-        int content_schema_version "sin esto no se puede migrar content"
-        varchar content_hash "integridad de lo firmado"
-        timestamptz signed_at "NOT NULL = firmado = no se edita"
-    }
-    service_types {
-        bigint id PK
-        bigint organization_id FK "denormalizado"
-        bigint legal_entity_id FK
-        varchar name "Limpieza Endodoncia"
-        int default_duration_minutes
-        int buffer_after_minutes "entra en slot_blocking"
-        boolean requires_laboratory
-    }
-    practitioner_schedules {
-        bigint id PK
-        bigint organization_id FK "denormalizado"
-        bigint assignment_id FK "la faceta DOCTOR"
-        bigint branch_id FK
-        varchar day_of_week
-        time start_time "hora de pared, se resuelve en la zona de branches"
-        time end_time
-        date valid_from "horario versionado"
-        date valid_until "EXCLUDE solape assignment+day+vigencia"
-    }
-    schedule_exceptions {
-        bigint id PK
-        bigint organization_id FK "denormalizado"
-        bigint assignment_id FK "NULL = toda la sucursal"
-        bigint branch_id FK
-        varchar exception_type "BLOCK EXTRA_SHIFT HOLIDAY"
-        timestamptz start_date_time
-        timestamptz end_date_time
-    }
-    appointments {
-        bigint id PK
-        bigint organization_id FK "denormalizado"
-        bigint legal_entity_id FK
-        bigint branch_id FK
-        bigint patient_assignment_id FK "faceta PATIENT"
-        bigint practitioner_assignment_id FK "faceta DOCTOR"
-        bigint practitioner_person_id FK "denormalizado - EL del EXCLUDE"
-        bigint service_type_id FK
-        bigint resource_id FK "sillon - nullable"
-        bigint conversation_id FK "de que chat salio"
-        timestamptz scheduled_start
-        tstzrange slot "lo que se pinta - EXCLUDE recurso sobre este"
-        tstzrange slot_blocking "slot + buffer - EXCLUDE persona sobre este"
-        varchar status "los EXCLUDE son parciales: excluyen CANCELLED y NO_SHOW"
-        timestamptz attended_at "habilita acceso permanente - lo lee el ABAC"
-    }
-    appointment_events {
-        bigint id PK
-        bigint organization_id FK "denormalizado"
-        bigint appointment_id FK
-        varchar event "CREATED CONFIRMED NO_SHOW"
-        bigint actor_user_id FK
-        varchar channel "WEB WHATSAPP PHONE"
-        jsonb payload
-    }
-
-    %% ========== 5. CRM OMNICANAL ==========
-    crm_channel_connections {
-        bigint id PK
-        bigint organization_id FK "denormalizado"
-        bigint legal_entity_id FK "el numero es de una sociedad"
-        varchar channel_type "WHATSAPP TELEGRAM MESSENGER"
-        varchar external_account_id "UNIQUE type+account - una cuenta, un tenant"
-        varchar access_token_encrypted "AES-GCM"
-        uuid webhook_token UK
-        varchar status
-    }
-    channel_connection_branches {
-        bigint organization_id FK "denormalizado"
-        bigint connection_id FK
-        bigint branch_id FK
-    }
-    crm_contacts {
-        bigint id PK
-        bigint organization_id FK
-        bigint person_id FK "nullable hasta identificar"
-        varchar display_name
-        varchar status "LEAD ACTIVE ARCHIVED"
-    }
-    crm_channel_user_links {
-        bigint id PK
-        bigint organization_id FK "aislamiento - sin esto se fugan contactos"
-        bigint contact_id FK
-        varchar channel_type
-        varchar external_user_id "UNIQUE org+type+user"
-        varchar external_chat_id "destino de envio"
-        varchar username
-        varchar display_name
+        bigint member_id FK "UNIQUE team+member - organization_members"
     }
     crm_conversations {
         bigint id PK
-        bigint organization_id FK "aislamiento"
+        bigint organization_id FK
         bigint contact_id FK
         bigint channel_connection_id FK
-        bigint assigned_user_id FK
+        bigint assigned_member_id FK "organization_members, no users"
         bigint team_id FK
         varchar status "OPEN PENDING CLOSED"
-        timestamptz window_expires_at "ventana 24h"
+        timestamptz window_expires_at "ventana 24h de Meta"
     }
     crm_messages {
         bigint id PK
@@ -382,35 +433,35 @@ erDiagram
         bigint sent_by_user_id FK
         varchar direction "IN OUT"
         varchar external_message_id "UNIQUE conn+external_id"
-        text content "viaja dato de salud - ver decision abierta"
+        text content "viaja dato de salud - decision de cifrado abierta"
     }
     crm_message_events {
         bigint id PK
-        bigint organization_id FK "denormalizado"
+        bigint organization_id FK
         bigint message_id FK
-        varchar event "UNIQUE msg+event - SENT DELIVERED READ FAILED"
+        varchar event "UNIQUE msg+event"
         timestamptz occurred_at
     }
     crm_message_attachments {
         bigint id PK
-        bigint organization_id FK "denormalizado"
+        bigint organization_id FK
         bigint message_id FK
         varchar media_url
         varchar mime_type
     }
     contact_consents {
         bigint id PK
-        bigint organization_id FK "denormalizado"
+        bigint organization_id FK
         bigint contact_id FK
         varchar channel_type "el opt-out es por canal"
         varchar purpose "MARKETING TRANSACTIONAL"
         varchar status "GRANTED REVOKED"
-        timestamptz occurred_at "fecha del cambio - se conserva historico"
+        timestamptz occurred_at
     }
 
-    %% ========== 6. MODULOS ==========
+    %% ========== 9. MODULOS (NO congelado en SQL) ==========
     modules {
-        varchar code PK "catalogo global - NO tenant-scoped"
+        varchar code PK "catalogo global - sin RLS"
         varchar name
         varchar min_plan
     }
@@ -421,18 +472,18 @@ erDiagram
         jsonb limits
     }
 
-    %% ========== 7. CAMPANAS ==========
+    %% ========== 10. CAMPANAS (NO congelado en SQL) ==========
     segments {
         bigint id PK
         bigint organization_id FK
-        jsonb filter "compila a SQL, igual que condition"
+        jsonb filter "compila a SQL con operadores cerrados"
     }
     message_templates {
         bigint id PK
         bigint organization_id FK
         varchar external_name "aprobada en Meta"
         varchar language_code "UNIQUE org+name+language"
-        jsonb variables "para renderizar"
+        jsonb variables
         varchar approval_status
     }
     campaigns {
@@ -441,106 +492,98 @@ erDiagram
         bigint legal_entity_id FK
         bigint segment_id FK
         bigint template_id FK
-        varchar status "DRAFT RUNNING DONE"
+        varchar status
         int throttle_per_minute
         varchar timezone "ancla de quiet_hours"
         jsonb quiet_hours
     }
     campaign_channels {
-        bigint organization_id FK "denormalizado"
+        bigint organization_id FK
         bigint campaign_id FK
         bigint channel_connection_id FK
     }
     campaign_recipients {
         bigint id PK
-        bigint organization_id FK "denormalizado"
+        bigint organization_id FK
         bigint campaign_id FK
         bigint contact_id FK "UNIQUE campaign+contact"
         bigint message_id FK "nullable hasta enviar"
         varchar status "PENDING SENT SKIPPED_OPTOUT"
     }
 
-    %% ========== 8. AUDITORIA ==========
-    audit_logs {
-        bigint id PK
-        bigint organization_id FK
-        bigint actor_user_id FK "quien"
-        bigint actor_assignment_id FK "con que faceta - nullable si platform admin"
-        varchar action "VIEW_MEDICAL_RECORD GRANT"
-        varchar entity_type
-        bigint entity_id
-        varchar scope_path "sobre que ambito decia tener permiso"
-        jsonb metadata
-        inet ip_address
-        timestamptz occurred_at "faltaba por completo - candidato a particion"
-    }
-
     %% ===== RELACIONES =====
-    %% organization_id denormalizado NO se dibuja: ver cabecera.
+    %% organization_id denormalizado NO se dibuja: son ~35 aristas de ruido.
     %%
-    %% NO son relaciones y por eso no aparecen aqui:
-    %%   - una cita debe caber en practitioner_schedules: se valida al agendar,
-    %%     appointments no apunta a un horario.
-    %%   - schedule_exceptions resta disponibilidad a un horario: se calcula,
-    %%     no hay FK entre las dos tablas.
-    %%   - role_definitions.permissions referencia permission_catalog desde un
-    %%     jsonb: no hay FK posible, hace falta validacion por trigger o codigo.
+    %% NO son relaciones, aunque lo parezcan:
+    %%   - practitioner_schedules no apunta a appointments. Que una cita quepa
+    %%     en el horario se valida al agendar; no hay FK.
+    %%   - schedule_exceptions no apunta a practitioner_schedules. La resta de
+    %%     disponibilidad se calcula.
+    %%   - authz_patient_read_path() no es una tabla: es la consulta canonica
+    %%     que recorre member_branches, patient_care_team, appointments y
+    %%     access_grants, y devuelve la via.
     organizations ||--o{ legal_entities : ""
     organizations ||--o{ persons : ""
-    organizations ||--o{ principals : ""
-    organizations ||--o{ user_person_links : "un humano por org"
-    organizations ||--o{ role_definitions : "puede clonar"
-    organizations ||--o{ access_policies : "edita ventanas"
-    organizations ||--o{ company_modules : ""
+    organizations ||--o{ organization_members : ""
+    organizations ||--o{ service_account_grants : ""
     organizations ||--o{ teams : ""
     organizations ||--o{ segments : ""
+    organizations ||--o{ company_modules : ""
     organizations ||--o{ audit_logs : ""
     legal_entities ||--o{ legal_entity_tax_ids : ""
     legal_entities ||--o{ branches : ""
     legal_entities ||--o{ service_types : ""
-    legal_entities ||--o{ clinical_records : ""
     legal_entities ||--o{ crm_channel_connections : ""
     legal_entities ||--o{ campaigns : ""
-    branches ||--o{ resources : ""
+    branches ||--o{ bookable_resources : ""
+    branches ||--o{ practitioner_branches : ""
+    branches ||--o{ member_branches : ""
     branches ||--o{ practitioner_schedules : ""
-    branches ||--o{ appointments : ""
     branches ||--o{ schedule_exceptions : ""
+    branches ||--o{ appointments : ""
     branches ||--o{ clinical_records : "donde se atendio"
     branches ||--o{ channel_connection_branches : ""
+    branches |o--o{ patients : "sucursal habitual"
 
     persons ||--o{ person_identifiers : ""
     persons ||--o{ person_phones : ""
     persons ||--o{ person_emails : ""
-    persons ||--o{ person_addresses : ""
-    persons |o--o| persons : "merged_into_id"
-    persons |o--o| user_person_links : "solo si loguea"
-    users ||--o{ user_person_links : "una credencial, N personas"
-    persons |o--o| principals : "principal de tipo PERSON"
-    persons ||--o{ clinical_records : "ancla clinica"
-    persons ||--o{ appointments : "EXCLUDE de solape va por aqui"
-    persons |o--o{ crm_contacts : "al identificar"
+    persons |o--o| persons : "merged_into_id, dentro del mismo tenant"
+    persons |o--o| organization_members : "si ademas loguea"
+    persons |o--o| practitioners : "faceta profesional"
+    persons |o--o| patients : "faceta paciente"
 
-    teams |o--o| principals : "principal de tipo GROUP"
-    teams ||--o{ team_members : ""
-    principals ||--o{ team_members : "pertenece a"
-    principals ||--o{ role_assignments : ""
-    role_definitions ||--o{ role_assignments : ""
-    role_definitions ||--o{ access_policies : "override por rol"
-    role_assignments ||--o{ audit_logs : "con que faceta actuo"
-    modules ||--o{ permission_catalog : ""
-    modules ||--o{ company_modules : ""
+    users ||--o{ organization_members : "una credencial, N organizaciones"
+    users ||--o{ service_account_grants : "service account"
+    organization_members ||--o{ organization_member_roles : "N roles"
+    organization_members ||--o{ member_branches : "ambito con vigencia"
+    organization_members ||--o{ access_grants : "beneficiario"
+    organization_members ||--o{ team_members : ""
+    organization_members ||--o{ crm_conversations : "asignada a"
 
-    role_assignments ||--o{ practitioner_schedules : "faceta DOCTOR"
-    role_assignments ||--o{ schedule_exceptions : ""
-    role_assignments ||--o{ appointments : "paciente y doctor"
-    role_assignments ||--o{ clinical_records : "autor que firma"
+    practitioners ||--o{ practitioner_specialties : ""
+    practitioners ||--o{ practitioner_branches : "donde ejerce"
+    practitioners ||--o{ patient_care_team : "equipo tratante"
+    practitioners ||--o{ appointments : "atiende"
+    practitioners ||--o{ clinical_records : "firma"
+    practitioners ||--o{ schedule_exceptions : ""
+    specialties ||--o{ practitioner_specialties : ""
+    practitioner_branches ||--o{ practitioner_schedules : "horario donde ejerce"
+    practitioner_branches ||--o{ appointments : "no puede agendar donde no ejerce"
+
+    patients ||--o{ patient_care_team : ""
+    patients ||--o{ appointments : ""
+    patients ||--o{ clinical_records : "ancla clinica"
+    patients ||--o{ access_grants : "destino del grant"
 
     service_types ||--o{ appointments : "duracion y buffer"
-    resources ||--o{ appointments : "sillon ocupado"
+    bookable_resources ||--o{ appointments : "sillon ocupado"
     appointments ||--o{ appointment_events : ""
     appointments ||--o{ clinical_records : "contexto"
     clinical_records |o--o| clinical_records : "enmienda a"
 
+    teams ||--o{ team_members : ""
+    teams ||--o{ crm_conversations : ""
     crm_channel_connections ||--o{ channel_connection_branches : ""
     crm_channel_connections ||--o{ crm_conversations : ""
     crm_channel_connections ||--o{ crm_messages : "idempotencia"
@@ -549,13 +592,12 @@ erDiagram
     crm_contacts ||--o{ crm_conversations : ""
     crm_contacts ||--o{ contact_consents : ""
     crm_contacts ||--o{ campaign_recipients : ""
-    teams ||--o{ crm_conversations : ""
     crm_conversations ||--o{ crm_messages : ""
-    crm_conversations |o--o{ appointments : "agendado por chat"
     crm_messages ||--o{ crm_message_events : ""
     crm_messages ||--o{ crm_message_attachments : ""
     crm_messages |o--o| campaign_recipients : "un envio por destinatario"
 
+    modules ||--o{ company_modules : ""
     segments ||--o{ campaigns : ""
     message_templates ||--o{ campaigns : ""
     campaigns ||--o{ campaign_channels : ""
