@@ -12,14 +12,12 @@
   "permanentLockout": false,
   "maxFailureWaitSeconds": 900,
   "failureFactor": 5,
-
   "accessTokenLifespan": 300,
   "ssoSessionIdleTimeout": 28800,
   "ssoSessionMaxLifespan": 43200,
   "offlineSessionIdleTimeout": 1,
   "offlineSessionMaxLifespanEnabled": true,
   "offlineSessionMaxLifespan": 1,
-
   "clients": [
     {
       "clientId": "iclinic-api",
@@ -31,7 +29,13 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
       "protocol": "openid-connect",
-      "defaultClientScopes": ["web-origins", "roles", "profile", "email", "acr"],
+      "defaultClientScopes": [
+        "web-origins",
+        "roles",
+        "profile",
+        "email",
+        "acr"
+      ],
       "protocolMappers": [
         {
           "name": "audience-iclinic-api",
@@ -45,7 +49,6 @@
           }
         }
       ],
-      "_comentario_audiencia": "Sin este mapper el token de iclinic-web NO lleva iclinic-api en `aud`, y AudienceValidator lo rechaza con 401. Es el error de configuracion mas comun al montar esto.",
       "defaultRoles": [],
       "roles": {}
     },
@@ -63,31 +66,68 @@
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "http://localhost:3000/*"
       },
-      "redirectUris": ["http://localhost:3000/*", "http://localhost:5173/*"],
-      "webOrigins": ["http://localhost:3000", "http://localhost:5173"],
-      "defaultClientScopes": ["web-origins", "roles", "profile", "email", "acr"],
-      "optionalClientScopes": ["iclinic-api-audience"]
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:5173"
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "roles",
+        "profile",
+        "email",
+        "acr"
+      ],
+      "optionalClientScopes": [
+        "iclinic-api-audience"
+      ]
     }
   ],
-
   "roles": {
     "client": {
       "iclinic-api": [
-        { "name": "SUPER_ADMIN",     "description": "Administrador de la plataforma" },
-        { "name": "ADMIN",           "description": "Administrador de la empresa" },
-        { "name": "BRANCH_MANAGER",  "description": "Responsable de una o varias sucursales" },
-        { "name": "DENTIST",         "description": "Profesional clinico" },
-        { "name": "ASSISTANT",       "description": "Asistente clinico" },
-        { "name": "RECEPTIONIST",    "description": "Recepcion y agenda" },
-        { "name": "EXTERNAL_DOCTOR", "description": "Profesional externo con acceso acotado" },
-        { "name": "BILLING",         "description": "Facturacion" },
-        { "name": "PATIENT",         "description": "Paciente" }
+        {
+          "name": "SUPER_ADMIN",
+          "description": "Administrador de la plataforma"
+        },
+        {
+          "name": "ADMIN",
+          "description": "Administrador de la empresa"
+        },
+        {
+          "name": "BRANCH_MANAGER",
+          "description": "Responsable de una o varias sucursales"
+        },
+        {
+          "name": "DENTIST",
+          "description": "Profesional clinico"
+        },
+        {
+          "name": "ASSISTANT",
+          "description": "Asistente clinico"
+        },
+        {
+          "name": "RECEPTIONIST",
+          "description": "Recepcion y agenda"
+        },
+        {
+          "name": "EXTERNAL_DOCTOR",
+          "description": "Profesional externo con acceso acotado"
+        },
+        {
+          "name": "BILLING",
+          "description": "Facturacion"
+        },
+        {
+          "name": "PATIENT",
+          "description": "Paciente"
+        }
       ]
     }
   },
-
-  "_comentario_roles": "Nombres identicos al enum UserRole que ya existe, mas BRANCH_MANAGER y BILLING. Es DENTIST, no DOCTOR; es ADMIN, no ORG_ADMIN. Cambiarlos obliga a mapear en la migracion y no aporta nada.",
-
   "authenticationFlows": [
     {
       "alias": "browser-mfa-condicional",
@@ -96,8 +136,20 @@
       "topLevel": true,
       "builtIn": false,
       "authenticationExecutions": [
-        { "authenticator": "auth-cookie",           "requirement": "ALTERNATIVE", "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false },
-        { "flowAlias": "mfa-condicional-formulario", "requirement": "ALTERNATIVE", "priority": 20, "userSetupAllowed": false, "autheticatorFlow": true }
+        {
+          "authenticator": "auth-cookie",
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "flowAlias": "mfa-condicional-formulario",
+          "requirement": "ALTERNATIVE",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true
+        }
       ]
     },
     {
@@ -107,8 +159,20 @@
       "topLevel": false,
       "builtIn": false,
       "authenticationExecutions": [
-        { "authenticator": "auth-username-password-form", "requirement": "REQUIRED",    "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false },
-        { "flowAlias": "mfa-condicional",                 "requirement": "CONDITIONAL", "priority": 20, "userSetupAllowed": false, "autheticatorFlow": true }
+        {
+          "authenticator": "auth-username-password-form",
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "flowAlias": "mfa-condicional",
+          "requirement": "CONDITIONAL",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true
+        }
       ]
     },
     {
@@ -118,14 +182,24 @@
       "topLevel": false,
       "builtIn": false,
       "authenticationExecutions": [
-        { "authenticator": "conditional-user-role", "requirement": "REQUIRED", "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false },
-        { "authenticator": "auth-otp-form",         "requirement": "REQUIRED", "priority": 20, "userSetupAllowed": false, "autheticatorFlow": false }
+        {
+          "authenticator": "conditional-user-role",
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "authenticator": "auth-otp-form",
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        }
       ]
     }
   ],
   "browserFlow": "browser-mfa-condicional",
-  "_comentario_mfa": "La condicion de rol de `conditional-user-role` se parametriza en la consola por ejecucion (una por rol). Este fichero deja el flujo montado; las tres condiciones concretas se anaden con `kcadm` en infra/keycloak/configurar-mfa.sh.",
-
   "users": [
     {
       "id": "00000000-0000-4000-8000-000000000001",
@@ -135,8 +209,18 @@
       "lastName": "García López",
       "enabled": true,
       "emailVerified": true,
-      "credentials": [{ "type": "password", "value": "dev", "temporary": false }],
-      "clientRoles": { "iclinic-api": ["ADMIN"] }
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dev",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "iclinic-api": [
+          "ADMIN"
+        ]
+      }
     },
     {
       "id": "00000000-0000-4000-8000-000000000002",
@@ -146,8 +230,18 @@
       "lastName": "Rodríguez Pérez",
       "enabled": true,
       "emailVerified": true,
-      "credentials": [{ "type": "password", "value": "dev", "temporary": false }],
-      "clientRoles": { "iclinic-api": ["DENTIST"] }
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dev",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "iclinic-api": [
+          "DENTIST"
+        ]
+      }
     },
     {
       "id": "00000000-0000-4000-8000-000000000003",
@@ -157,8 +251,18 @@
       "lastName": "Mendoza Silva",
       "enabled": true,
       "emailVerified": true,
-      "credentials": [{ "type": "password", "value": "dev", "temporary": false }],
-      "clientRoles": { "iclinic-api": ["RECEPTIONIST"] }
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dev",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "iclinic-api": [
+          "RECEPTIONIST"
+        ]
+      }
     },
     {
       "id": "00000000-0000-4000-8000-000000000004",
@@ -168,8 +272,18 @@
       "lastName": "Martínez López",
       "enabled": true,
       "emailVerified": true,
-      "credentials": [{ "type": "password", "value": "dev", "temporary": false }],
-      "clientRoles": { "iclinic-api": ["ADMIN"] }
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dev",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "iclinic-api": [
+          "ADMIN"
+        ]
+      }
     },
     {
       "id": "00000000-0000-4000-8000-000000000005",
@@ -179,9 +293,18 @@
       "lastName": "",
       "enabled": true,
       "emailVerified": true,
-      "credentials": [{ "type": "password", "value": "dev", "temporary": false }],
-      "clientRoles": { "iclinic-api": ["SUPER_ADMIN"] }
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dev",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "iclinic-api": [
+          "SUPER_ADMIN"
+        ]
+      }
     }
-  ],
-  "_comentario_usuarios": "Los UUID coinciden con keycloak_user_id de db/seed/dev-seed.sql e import.sql, para que el entorno local funcione sin pasos manuales. La contrasena 'dev' es SOLO para desarrollo: este realm no se despliega."
+  ]
 }

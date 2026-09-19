@@ -6,6 +6,7 @@ import com.iclinic.iclinicbackend.shared.security.AudienceValidator;
 import com.iclinic.iclinicbackend.shared.security.KeycloakRolesConverter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -20,7 +21,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -82,6 +83,29 @@ public class SecurityConfig {
     @Bean
     public TokenRevocationFilter tokenRevocationFilter() {
         return new TokenRevocationFilter(userRepository);
+    }
+
+    /**
+     * Impide que Spring Boot registre el filtro <em>además</em> en la cadena de
+     * servlets global.
+     * <p>
+     * Todo bean de tipo {@code Filter} se auto-registra en el contenedor, y sin
+     * orden explícito queda con la precedencia más baja: por detrás del
+     * {@code FilterChainProxy} de Spring Security. El resultado es que el filtro
+     * se ejecuta dos veces, y la que manda es la accidental —la global—, que
+     * corre para <em>todas</em> las rutas, incluidas las públicas como los
+     * webhooks y Swagger.
+     * <p>
+     * Se detectó porque al quitar el {@code addFilterAfter} de la cadena de
+     * seguridad los tests seguían pasando: la protección venía de la
+     * registración que nadie había escrito.
+     */
+    @Bean
+    public FilterRegistrationBean<TokenRevocationFilter> tokenRevocationFilterSinRegistroGlobal(
+            TokenRevocationFilter filtro) {
+        FilterRegistrationBean<TokenRevocationFilter> registro = new FilterRegistrationBean<>(filtro);
+        registro.setEnabled(false);
+        return registro;
     }
 
     @Bean
@@ -155,7 +179,13 @@ public class SecurityConfig {
                 // debe dar 403, no quedar abierto a cualquier usuario con token.
                 .anyRequest().denyAll()
             )
-            .addFilterAfter(tokenRevocationFilter(), UsernamePasswordAuthenticationFilter.class);
+            // DESPUÉS de BearerTokenAuthenticationFilter, que es donde se valida
+            // el token y se puebla el contexto. Colocado tras
+            // UsernamePasswordAuthenticationFilter —que en la cadena va ANTES—
+            // el filtro corría con el contexto vacío: no había autenticación que
+            // inspeccionar y el kill-switch no hacía absolutamente nada, en
+            // silencio y con el test en verde si solo se mira el 200.
+            .addFilterAfter(tokenRevocationFilter(), BearerTokenAuthenticationFilter.class);
 
         return http.build();
     }

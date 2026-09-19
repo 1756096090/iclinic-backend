@@ -6,7 +6,9 @@ import com.iclinic.iclinicbackend.shared.enums.DocumentType;
 import com.iclinic.iclinicbackend.shared.enums.SubjectType;
 import com.iclinic.iclinicbackend.shared.enums.UserRole;
 import com.iclinic.iclinicbackend.support.AbstractPostgresIT;
-import dasniko.testcontainers.keycloak.KeycloakContainer;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.utility.MountableFile;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,6 +26,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -45,20 +48,44 @@ class KeycloakAuthenticationIT extends AbstractPostgresIT {
     private static final String REALM = "iclinic";
     private static final String API_CLIENT = "iclinic-api";
 
-    static final KeycloakContainer KEYCLOAK =
-            new KeycloakContainer("quay.io/keycloak/keycloak:26.0")
-                    .withRealmImportFile("/keycloak/realm-iclinic-test.json");
+    /**
+     * Imagen oficial con un {@link GenericContainer}, en lugar de la libreria
+     * {@code testcontainers-keycloak}: su matriz de compatibilidad va por detras
+     * de las versiones de Keycloak y su estrategia de espera apunta a
+     * {@code /health} en el puerto 8080, cuando desde Keycloak 25 la salud vive
+     * en la interfaz de gestion (9000). Aqui se espera contra el endpoint que de
+     * verdad importa, el realm respondiendo, y no hay version de libreria que
+     * sincronizar.
+     */
+    @SuppressWarnings("resource")
+    static final GenericContainer<?> KEYCLOAK =
+            new GenericContainer<>("quay.io/keycloak/keycloak:26.0")
+                    .withExposedPorts(8080)
+                    .withEnv("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
+                    .withEnv("KC_BOOTSTRAP_ADMIN_PASSWORD", "admin")
+                    .withCopyFileToContainer(
+                            MountableFile.forClasspathResource("keycloak/realm-iclinic-test.json"),
+                            "/opt/keycloak/data/import/realm-iclinic-test.json")
+                    .withCommand("start-dev", "--import-realm")
+                    .waitingFor(Wait.forHttp("/realms/" + REALM)
+                            .forPort(8080)
+                            .forStatusCode(200)
+                            .withStartupTimeout(Duration.ofMinutes(3)));
 
     static {
         KEYCLOAK.start();
     }
 
+    private static String authServerUrl() {
+        return "http://" + KEYCLOAK.getHost() + ":" + KEYCLOAK.getMappedPort(8080);
+    }
+
     @DynamicPropertySource
     static void keycloakProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.security.oauth2.resourceserver.jwt.issuer-uri",
-                () -> KEYCLOAK.getAuthServerUrl() + "/realms/" + REALM);
+                () -> authServerUrl() + "/realms/" + REALM);
         registry.add("spring.security.oauth2.resourceserver.jwt.jwk-set-uri",
-                () -> KEYCLOAK.getAuthServerUrl() + "/realms/" + REALM + "/protocol/openid-connect/certs");
+                () -> authServerUrl() + "/realms/" + REALM + "/protocol/openid-connect/certs");
         registry.add("iclinic.keycloak.client-id", () -> API_CLIENT);
     }
 
@@ -89,8 +116,10 @@ class KeycloakAuthenticationIT extends AbstractPostgresIT {
     @Test
     @DisplayName("un token sin el rol exigido recibe 403, no 401")
     void tokenSinElRolRecibe403() {
-        // Recepcion no administra empresas.
-        var respuesta = llamar("/api/v1/companies", token("carlos.mendoza@test.ec"));
+        // Las conexiones de canal son de administracion; recepcion no las gestiona.
+        // (Recepcion SI puede LEER empresas y sucursales, asi que ese endpoint no
+        //  serviria para esta prueba.)
+        var respuesta = llamar("/api/v1/crm/channels", token("carlos.mendoza@test.ec"));
         assertThat(respuesta.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
@@ -160,9 +189,18 @@ class KeycloakAuthenticationIT extends AbstractPostgresIT {
         return solicitarToken("iclinic-web-test", usuario);
     }
 
-    /** Token del mismo realm pero sin `iclinic-api` en la audiencia. */
+    /**
+     * Token del mismo realm pero sin {@code iclinic-api} en la audiencia.
+     * <p>
+     * El usuario tiene que ser uno SIN roles de cliente en {@code iclinic-api}.
+     * Keycloak trae de serie el mapper <em>audience resolve</em> en el ambito
+     * {@code roles}, que anade a {@code aud} todo cliente en el que el usuario
+     * tenga algun rol: con maria, que es DENTIST, hasta el token de
+     * {@code otro-cliente-test} saldria con la audiencia correcta y la prueba
+     * pasaria sin probar nada.
+     */
     private String tokenDeOtroCliente() {
-        return solicitarToken("otro-cliente-test", "maria.rodriguez@test.ec");
+        return solicitarToken("otro-cliente-test", "ajeno@test.ec");
     }
 
     @SuppressWarnings("unchecked")
@@ -177,7 +215,7 @@ class KeycloakAuthenticationIT extends AbstractPostgresIT {
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
 
         Map<String, Object> cuerpo = rest.postForObject(
-                KEYCLOAK.getAuthServerUrl() + "/realms/" + REALM + "/protocol/openid-connect/token",
+                authServerUrl() + "/realms/" + REALM + "/protocol/openid-connect/token",
                 new HttpEntity<>(form, headers), Map.class);
 
         return (String) cuerpo.get("access_token");
