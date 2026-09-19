@@ -28,29 +28,7 @@
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
-      "protocol": "openid-connect",
-      "defaultClientScopes": [
-        "web-origins",
-        "roles",
-        "profile",
-        "email",
-        "acr"
-      ],
-      "protocolMappers": [
-        {
-          "name": "audience-iclinic-api",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "iclinic-api",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        }
-      ],
-      "defaultRoles": [],
-      "roles": {}
+      "protocol": "openid-connect"
     },
     {
       "clientId": "iclinic-web",
@@ -74,16 +52,31 @@
         "http://localhost:3000",
         "http://localhost:5173"
       ],
-      "defaultClientScopes": [
-        "web-origins",
-        "roles",
-        "profile",
-        "email",
-        "acr"
-      ],
-      "optionalClientScopes": [
-        "iclinic-api-audience"
+      "protocolMappers": [
+        {
+          "name": "iclinic-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "iclinic-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
       ]
+    },
+    {
+      "clientId": "iclinic-migrador",
+      "name": "Alta de usuarios existentes en Keycloak (migrar-usuarios.sh)",
+      "enabled": true,
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "secret": "dev-migrador-secret"
     }
   ],
   "roles": {
@@ -126,7 +119,23 @@
           "description": "Paciente"
         }
       ]
-    }
+    },
+    "realm": [
+      {
+        "name": "mfa-required",
+        "description": "Compuesto: agrupa los roles que exigen OTP. Anadir MFA a un rol nuevo es anadirlo aqui, no tocar el flujo.",
+        "composite": true,
+        "composites": {
+          "client": {
+            "iclinic-api": [
+              "SUPER_ADMIN",
+              "ADMIN",
+              "DENTIST"
+            ]
+          }
+        }
+      }
+    ]
   },
   "authenticationFlows": [
     {
@@ -177,7 +186,7 @@
     },
     {
       "alias": "mfa-condicional",
-      "description": "OTP obligatorio para SUPER_ADMIN, ADMIN y DENTIST",
+      "description": "OTP si el usuario tiene el rol compuesto mfa-required",
       "providerId": "basic-flow",
       "topLevel": false,
       "builtIn": false,
@@ -187,7 +196,8 @@
           "requirement": "REQUIRED",
           "priority": 10,
           "userSetupAllowed": false,
-          "autheticatorFlow": false
+          "autheticatorFlow": false,
+          "authenticatorConfig": "mfa-required-condition"
         },
         {
           "authenticator": "auth-otp-form",
@@ -304,6 +314,28 @@
         "iclinic-api": [
           "SUPER_ADMIN"
         ]
+      }
+    },
+    {
+      "username": "service-account-iclinic-migrador",
+      "enabled": true,
+      "serviceAccountClientId": "iclinic-migrador",
+      "clientRoles": {
+        "realm-management": [
+          "manage-users",
+          "view-users",
+          "query-users",
+          "view-clients"
+        ]
+      }
+    }
+  ],
+  "authenticatorConfig": [
+    {
+      "alias": "mfa-required-condition",
+      "config": {
+        "condition-user-role": "mfa-required",
+        "negate": "false"
       }
     }
   ]

@@ -31,10 +31,20 @@ causa.
 `ORG_ADMIN`. Así la migración de roles es literal y no hace falta tabla de
 traducción.
 
-**El flujo `mfa-condicional` queda montado pero sin parametrizar.** La condición
-de `conditional-user-role` se configura por ejecución, una por rol, y eso no cabe
-en el import: se aplica con `kcadm` después de importar. Mientras no se haga, el
-OTP no se exige a nadie.
+**El OTP condicional usa un rol compuesto, no tres condiciones.**
+`conditional-user-role` evalúa **un** rol por ejecución, así que exigir OTP a tres
+roles parecía requerir tres subflujos y un script de `kcadm`. No hace falta: hay
+un rol de realm `mfa-required`, compuesto, que contiene `SUPER_ADMIN`, `ADMIN` y
+`DENTIST`, y **una sola** condición sobre él. Añadir MFA a un rol nuevo
+(`BILLING`, `BRANCH_MANAGER`) es meterlo en el compuesto, sin tocar el flujo de
+autenticación.
+
+**El cliente `iclinic-migrador`** es la cuenta de servicio que usa
+`migrar-usuarios.sh`. Necesita `manage-users`, `view-users`, `query-users` y
+**`view-clients`** de `realm-management`: sin el último, la búsqueda del cliente
+`iclinic-api` devuelve una lista vacía con HTTP 200 —no un 403— y el guion falla
+diciendo que el cliente no existe. Su secreto (`dev-migrador-secret`) es de
+desarrollo, igual que las contraseñas `dev`; en producción se inyecta por entorno.
 
 **Los UUID de los usuarios son fijos y coinciden** con `keycloak_user_id` en
 `db/seed/dev-seed.sql` e `import.sql`, para que el entorno local funcione sin
@@ -65,6 +75,28 @@ en el 8080. Las estrategias de espera que apuntan a `/health/started` en el puer
 HTTP agotan el tiempo aunque el servidor esté en pie. `KeycloakAuthenticationIT`
 espera contra `/realms/iclinic`, que además comprueba lo que de verdad importa:
 que el realm se importó.
+
+## Si cambias el realm, recrea el volumen
+
+`--import-realm` **omite** el realm si ya existe en la base de Keycloak, que
+sobrevive a `docker compose down`. Editas `realm-iclinic.json`, reinicias, y no
+pasa nada — y el log dice `Import finished successfully` igualmente.
+
+`KC_SPI_IMPORT_DIR_STRATEGY=OVERWRITE_EXISTING` cubre el primer arranque sobre una
+base vacía, pero no los reinicios posteriores, y `--spi-import-dir-strategy` está
+deshabilitado en Keycloak 26 (`Disabled option: '--override'`). Así que:
+
+```bash
+docker rm -f iclinic-keycloak iclinic-keycloak-db
+docker volume rm iclinic-backend_keycloak_data
+docker compose up -d keycloak
+docker logs iclinic-keycloak | grep "Strategy:"   # debe decir OVERWRITE_EXISTING
+```
+
+Si dice `IGNORE_EXISTING`, tus cambios **no** se aplicaron.
+
+`RealmDeProduccionIT` valida este fichero en cada `./gradlew integrationTest`, así
+que un campo inválido se detecta en el build y no desplegando.
 
 ## Puesta en marcha local
 

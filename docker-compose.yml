@@ -49,6 +49,24 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_HEALTH_ENABLED: "true"
+      # OJO: --import-realm OMITE el realm si YA EXISTE en la base de Keycloak,
+      # que sobrevive a `docker compose down`. Editas realm-iclinic.json,
+      # reinicias, y no pasa nada — y el log dice "Import finished successfully"
+      # igualmente. El fichero versionado deja de ser la verdad sin que nadie se
+      # entere.
+      #
+      # Esta variable hace que el PRIMER arranque sobre una base vacia use
+      # OVERWRITE_EXISTING, pero NO basta en los reinicios posteriores, y
+      # --spi-import-dir-strategy esta deshabilitado en Keycloak 26
+      # ("Disabled option: '--override'").
+      #
+      # Asi que la regla operativa es: SI CAMBIAS EL REALM, RECREA EL VOLUMEN.
+      #   docker rm -f iclinic-keycloak iclinic-keycloak-db
+      #   docker volume rm iclinic-backend_keycloak_data
+      #   docker compose up -d keycloak
+      # Comprueba en el log que dice "Strategy: OVERWRITE_EXISTING"; si dice
+      # IGNORE_EXISTING, tus cambios NO se aplicaron.
+      KC_SPI_IMPORT_DIR_STRATEGY: OVERWRITE_EXISTING
     ports:
       - "8081:8080"
     volumes:

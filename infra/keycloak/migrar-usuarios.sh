@@ -7,14 +7,25 @@ set -euo pipefail
 
 LOTE=50
 DRY_RUN=0
+COMPANY_ID=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --lote)    LOTE="$2"; shift 2 ;;
-    --dry-run) DRY_RUN=1; shift ;;
-    *) echo "Uso: $0 [--lote N] [--dry-run]" >&2; exit 2 ;;
+    --lote)       LOTE="$2"; shift 2 ;;
+    --company-id) COMPANY_ID="$2"; shift 2 ;;
+    --dry-run)    DRY_RUN=1; shift ;;
+    *) echo "Uso: $0 [--lote N] [--company-id N] [--dry-run]" >&2; exit 2 ;;
   esac
 done
+
+# Migrar por empresa, no todos de golpe: al entrar en Keycloak cada persona tiene
+# que establecer contrasena, y eso se coordina clinica por clinica.
+FILTRO_EMPRESA=""
+if [[ -n "${COMPANY_ID}" ]]; then
+  [[ "${COMPANY_ID}" =~ ^[0-9]+$ ]] || { echo "--company-id debe ser numerico" >&2; exit 2; }
+  FILTRO_EMPRESA="AND EXISTS (SELECT 1 FROM company_memberships m
+                                WHERE m.user_id = users.id AND m.company_id = ${COMPANY_ID})"
+fi
 
 : "${KEYCLOAK_URL:?falta KEYCLOAK_URL}"
 : "${KEYCLOAK_REALM:?falta KEYCLOAK_REALM}"
@@ -50,16 +61,21 @@ creados=0; reutilizados=0; fallidos=0
 while :; do
   # Solo los que faltan. Al escribir keycloak_user_id al final de cada iteracion,
   # relanzar el script retoma donde se quedo: de ahi la idempotencia.
-  filas="$(psql "${DB_URL}" -At -F $'\t' -c \
+  # Separador de unidad (0x1F), NO tabulador: el tabulador cuenta como espacio
+  # en blanco para IFS y bash colapsa los consecutivos en uno solo. Con un
+  # last_name vacio las columnas se DESPLAZAN y se acaba pidiendo el rol "t"
+  # —el valor de `active`—, que devuelve 404. Detectado con un usuario sin apellido.
+  filas="$(psql "${DB_URL}" -At -F $'\x1f' -c \
     "SELECT id, email, first_name, last_name, role, active
        FROM users
       WHERE keycloak_user_id IS NULL
+        ${FILTRO_EMPRESA}
       ORDER BY id
       LIMIT ${LOTE}")"
 
   [[ -z "${filas}" ]] && break
 
-  while IFS=$'\t' read -r id email nombre apellidos rol activo; do
+  while IFS=$'\x1f' read -r id email nombre apellidos rol activo; do
     [[ -z "${id}" ]] && continue
 
     existente="$(curl -sS --fail-with-body "${auth[@]}" \
@@ -114,7 +130,7 @@ done
 echo "creados=${creados} reutilizados=${reutilizados} fallidos=${fallidos}"
 
 pendientes="$(psql "${DB_URL}" -At -c \
-  "SELECT count(*) FROM users WHERE keycloak_user_id IS NULL AND active = true")"
+  "SELECT count(*) FROM users WHERE keycloak_user_id IS NULL AND active = true ${FILTRO_EMPRESA}")"
 echo "usuarios activos sin proyectar: ${pendientes}"
 if [[ "${pendientes}" != "0" ]]; then
   echo "V3 fallara mientras esto no sea 0." >&2
