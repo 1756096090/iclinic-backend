@@ -56,9 +56,13 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // ── Públicos: no requieren autenticación ──
                 .requestMatchers("/api/v1/auth/firebase/sync").permitAll()
-                .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                // /api-docs es la ruta configurada en springdoc.api-docs.path; sin ella
+                // Swagger UI carga pero no puede descargar el spec (403).
+                .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/api-docs/**", "/api-docs", "/v3/api-docs/**").permitAll()
                 .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers("/api/v1/crm/webhooks/**").permitAll()
+                // Authentication is checked on STOMP CONNECT, then each subscription is authorized.
+                .requestMatchers("/ws-stomp", "/ws/**").permitAll()
 
                 // ── Requieren autenticación ──
                 .requestMatchers("/api/v1/auth/me").authenticated()

@@ -22,7 +22,9 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import org.springframework.test.context.ActiveProfiles;
 
+@ActiveProfiles("test")
 @SpringBootTest
 @AutoConfigureMockMvc(addFilters = false) // desactiva la cadena de seguridad para el test MVC
 @DisplayName("ConversationController Tests")

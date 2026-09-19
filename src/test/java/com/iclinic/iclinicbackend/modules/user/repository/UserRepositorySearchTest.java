@@ -16,7 +16,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.test.context.ActiveProfiles;
 import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest
-@ActiveProfiles("h2")
+@ActiveProfiles("test")
 @DisplayName("UserRepository Search Tests")
 class UserRepositorySearchTest {
     @Autowired private UserRepository userRepository;

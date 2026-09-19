@@ -21,7 +21,9 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
+import org.springframework.test.context.ActiveProfiles;
 
+@ActiveProfiles("test")
 @SpringBootTest
 @Transactional
 @DisplayName("CrmMessageRepository Tests")
@@ -56,6 +58,7 @@ class CrmMessageRepositoryTest {
                 .fullName("Juan Pérez")
                 .phone("+593987654321")
                 .company(company)
+                .sourceChannel(ChannelType.WHATSAPP)
                 .build();
         contact = contactRepository.save(contact);
 
@@ -88,6 +91,7 @@ class CrmMessageRepositoryTest {
                 .content("First message")
                 .direction(MessageDirection.INBOUND)
                 .status(MessageStatus.RECEIVED)
+                .messageType(MessageType.TEXT)
                 .build();
         messageRepository.save(msg1);
 
@@ -100,6 +104,7 @@ class CrmMessageRepositoryTest {
                 .content("Second message")
                 .direction(MessageDirection.OUTBOUND)
                 .status(MessageStatus.SENT)
+                .messageType(MessageType.TEXT)
                 .build();
         messageRepository.save(msg2);
 
@@ -121,6 +126,7 @@ class CrmMessageRepositoryTest {
                 .content("Telegram message")
                 .direction(MessageDirection.INBOUND)
                 .status(MessageStatus.RECEIVED)
+                .messageType(MessageType.TEXT)
                 .build();
         messageRepository.save(message);
 
@@ -156,6 +162,7 @@ class CrmMessageRepositoryTest {
                 .fullName("María García")
                 .phone("+593991234567")
                 .company(channel.getCompany())
+                .sourceChannel(ChannelType.WHATSAPP)
                 .build();
         contact2 = contactRepository.save(contact2);
 
@@ -173,6 +180,7 @@ class CrmMessageRepositoryTest {
                 .content("Message in first conversation")
                 .direction(MessageDirection.INBOUND)
                 .status(MessageStatus.RECEIVED)
+                .messageType(MessageType.TEXT)
                 .build();
         messageRepository.save(msg1);
 
@@ -183,6 +191,7 @@ class CrmMessageRepositoryTest {
                 .content("Message in second conversation")
                 .direction(MessageDirection.INBOUND)
                 .status(MessageStatus.RECEIVED)
+                .messageType(MessageType.TEXT)
                 .build();
         messageRepository.save(msg2);
 
