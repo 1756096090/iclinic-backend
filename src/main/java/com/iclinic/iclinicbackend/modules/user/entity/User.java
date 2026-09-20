@@ -3,12 +3,15 @@ package com.iclinic.iclinicbackend.modules.user.entity;
 import com.iclinic.iclinicbackend.modules.branch.entity.Branch;
 import com.iclinic.iclinicbackend.modules.company.entity.Company;
 import com.iclinic.iclinicbackend.shared.enums.DocumentType;
+import com.iclinic.iclinicbackend.shared.enums.SubjectType;
 import com.iclinic.iclinicbackend.shared.enums.UserRole;
 import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "users")
@@ -36,12 +39,16 @@ public abstract class User {
     @Column(nullable = false, unique = true)
     private String email;
 
-    @Column
-    private String password;
-
     @Column(unique = true)
     private String phone;
 
+    /**
+     * OBSOLETA. La sustituye {@code company_membership_roles} en el bloque D.
+     * El filtro de autenticacion ya no la lee: el rol efectivo es el del JWT
+     * intersecado con el de la membresia. Se conserva mientras quede codigo de
+     * negocio que la consulte, y se elimina con la migracion de roles.
+     */
+    @Deprecated
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private UserRole role;
@@ -70,11 +77,27 @@ public abstract class User {
     @Column
     private LocalDateTime updatedAt;
 
-    @Column(unique = true)
-    private String externalAuthId;
+    /** El {@code sub} del token de Keycloak. Fuente de verdad de la identidad. */
+    @Column(name = "keycloak_user_id", unique = true)
+    private UUID keycloakUserId;
 
-    @Column
-    private String authProvider;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "subject_type", nullable = false, length = 20)
+    @Builder.Default
+    private SubjectType subjectType = SubjectType.HUMAN;
+
+    /** {@code azp} del cliente. Obligatorio si y solo si es cuenta de servicio. */
+    @Column(name = "keycloak_client_id", length = 120)
+    private String keycloakClientId;
+
+    /**
+     * Interruptor de emergencia: se rechaza (401) todo token cuyo {@code iat} sea
+     * anterior a esta marca. Un UPDATE corta todas las sesiones vivas del usuario
+     * en la siguiente peticion, sin estado de sesion en el backend.
+     */
+    @Column(name = "tokens_valid_from", nullable = false)
+    @Builder.Default
+    private Instant tokensValidFrom = Instant.now();
 
     @Column
     private String photoUrl;

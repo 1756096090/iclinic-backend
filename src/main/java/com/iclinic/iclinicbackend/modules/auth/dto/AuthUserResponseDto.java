@@ -6,14 +6,16 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.util.UUID;
+
 @Getter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class AuthUserResponseDto {
     private Long id;
-    private String externalAuthId;
-    private String authProvider;
+    /** El `sub` de Keycloak. Sustituye a externalAuthId/authProvider de Firebase. */
+    private UUID keycloakUserId;
     private String email;
     private String fullName;
     private String photoUrl;

@@ -1,0 +1,148 @@
+{
+  "realm": "iclinic",
+  "enabled": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 300,
+  "clients": [
+    {
+      "clientId": "iclinic-api",
+      "enabled": true,
+      "bearerOnly": true,
+      "publicClient": false,
+      "protocol": "openid-connect"
+    },
+    {
+      "clientId": "iclinic-web-test",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "*"
+      ],
+      "webOrigins": [
+        "*"
+      ],
+      "protocolMappers": [
+        {
+          "name": "audience-iclinic-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "iclinic-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "otro-cliente-test",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "*"
+      ],
+      "webOrigins": [
+        "*"
+      ]
+    }
+  ],
+  "roles": {
+    "client": {
+      "iclinic-api": [
+        {
+          "name": "SUPER_ADMIN"
+        },
+        {
+          "name": "ADMIN"
+        },
+        {
+          "name": "BRANCH_MANAGER"
+        },
+        {
+          "name": "DENTIST"
+        },
+        {
+          "name": "ASSISTANT"
+        },
+        {
+          "name": "RECEPTIONIST"
+        },
+        {
+          "name": "EXTERNAL_DOCTOR"
+        },
+        {
+          "name": "BILLING"
+        },
+        {
+          "name": "PATIENT"
+        }
+      ]
+    }
+  },
+  "users": [
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "username": "maria.rodriguez@test.ec",
+      "email": "maria.rodriguez@test.ec",
+      "firstName": "María",
+      "lastName": "Rodríguez",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dev",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "iclinic-api": [
+          "DENTIST"
+        ]
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "username": "carlos.mendoza@test.ec",
+      "email": "carlos.mendoza@test.ec",
+      "firstName": "Carlos",
+      "lastName": "Mendoza",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dev",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "iclinic-api": [
+          "RECEPTIONIST"
+        ]
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000009",
+      "username": "ajeno@test.ec",
+      "email": "ajeno@test.ec",
+      "firstName": "Ajeno",
+      "lastName": "SinRoles",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dev",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

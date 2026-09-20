@@ -89,7 +89,7 @@ public class CrmContactServiceImpl implements CrmContactService {
         CrmContact contact = CrmContact.builder()
                 .company(company)
                 .branch(branch)
-                .fullName(fullName != null && !fullName.isBlank() ? fullName : "Desconocido")
+                .fullName(resolveDisplayName(fullName, phone))
                 .phone(phone)
                 .sourceChannel(com.iclinic.iclinicbackend.shared.enums.ChannelType.WHATSAPP)
                 .active(true)
@@ -152,6 +152,17 @@ public class CrmContactServiceImpl implements CrmContactService {
             linkRepository.save(link);
             log.debug("ChannelUserLink actualizado: id={}", link.getId());
         }
+    }
+
+    /**
+     * Nombre visible de un contacto creado sin nombre: se prefiere el telefono
+     * (identifica a la persona en la bandeja) y solo si tampoco hay telefono se
+     * cae a "Desconocido".
+     */
+    private String resolveDisplayName(String fullName, String phone) {
+        if (fullName != null && !fullName.isBlank()) return fullName;
+        if (phone != null && !phone.isBlank()) return phone;
+        return "Desconocido";
     }
 
     private Branch resolveBranch(Long branchId, Company company) {

@@ -16,7 +16,6 @@ import com.iclinic.iclinicbackend.shared.exception.BranchNotFoundException;
 import com.iclinic.iclinicbackend.shared.exception.CompanyNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,7 +35,6 @@ public class UserServiceImpl implements UserService {
     private final CompanyRepository companyRepository;
     private final BranchRepository branchRepository;
     private final UserMapper userMapper;
-    private final PasswordEncoder passwordEncoder;
     private final CurrentUserService currentUserService;
 
     @Override
@@ -192,9 +190,6 @@ public class UserServiceImpl implements UserService {
         user.setFirstName(dto.getFirstName());
         user.setLastName(dto.getLastName());
         user.setEmail(dto.getEmail());
-        if (dto.getPassword() != null && !dto.getPassword().isBlank()) {
-            user.setPassword(passwordEncoder.encode(dto.getPassword()));
-        }
         user.setPhone(dto.getPhone());
         user.setRole(dto.getRole());
         user.setDocumentType(

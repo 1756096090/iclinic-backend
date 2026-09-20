@@ -20,7 +20,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
+import org.springframework.test.context.ActiveProfiles;
 
+@ActiveProfiles("test")
 @SpringBootTest
 @Transactional
 @DisplayName("ChannelConnectionService Integration Tests")
@@ -67,10 +69,14 @@ class ChannelConnectionServiceImplTest {
                 .build();
         channelRepository.save(deleted);
 
-        List<ChannelConnectionResponseDto> results = channelConnectionService.getAll();
+        // getAll() devuelve tambien los canales del seed, asi que se comprueba
+        // sobre los ids creados aqui: el activo aparece y el borrado no.
+        List<Long> visibleIds = channelConnectionService.getAll().stream()
+                .map(ChannelConnectionResponseDto::getId)
+                .toList();
 
-        assertThat(results).hasSize(1);
-        assertThat(results.get(0).getChannelType()).isEqualTo(ChannelType.TELEGRAM);
+        assertThat(visibleIds).contains(active.getId());
+        assertThat(visibleIds).doesNotContain(deleted.getId());
     }
 
     @Test
@@ -136,8 +142,9 @@ class ChannelConnectionServiceImplTest {
         assertThat(deleted.getDeletedAt()).isNotNull();
 
         // Verify it doesn't appear in getAll
-        List<ChannelConnectionResponseDto> allChannels = channelConnectionService.getAll();
-        assertThat(allChannels).isEmpty();
+        assertThat(channelConnectionService.getAll())
+                .extracting(ChannelConnectionResponseDto::getId)
+                .doesNotContain(channelId);
     }
 
     @Test

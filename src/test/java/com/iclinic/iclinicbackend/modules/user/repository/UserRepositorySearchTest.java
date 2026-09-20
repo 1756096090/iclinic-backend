@@ -6,6 +6,7 @@ import com.iclinic.iclinicbackend.modules.company.repository.CompanyRepository;
 import com.iclinic.iclinicbackend.modules.user.entity.ColombianUser;
 import com.iclinic.iclinicbackend.modules.user.entity.EcuadorianUser;
 import com.iclinic.iclinicbackend.shared.enums.DocumentType;
+import com.iclinic.iclinicbackend.shared.enums.SubjectType;
 import com.iclinic.iclinicbackend.shared.enums.UserRole;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,7 +17,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.test.context.ActiveProfiles;
 import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest
-@ActiveProfiles("h2")
+@ActiveProfiles("test")
 @DisplayName("UserRepository Search Tests")
 class UserRepositorySearchTest {
     @Autowired private UserRepository userRepository;
@@ -30,7 +31,9 @@ class UserRepositorySearchTest {
         assertThat(user.getIsPlatformAdmin()).isTrue();
         assertThat(user.getCompany().getId()).isEqualTo(1L);
         assertThat(user.getBranch().getId()).isEqualTo(1L);
-        assertThat(user.getPassword()).isNull();
+        // La credencial vive en Keycloak: aqui solo hay proyeccion del sujeto.
+        assertThat(user.getKeycloakUserId()).isNotNull();
+        assertThat(user.getSubjectType()).isEqualTo(SubjectType.HUMAN);
     }
 
     @Test
@@ -43,7 +46,6 @@ class UserRepositorySearchTest {
         veronica.setFirstName("Veronica");
         veronica.setLastName("Salazar");
         veronica.setEmail("veronica@clinic.com");
-        veronica.setPassword("secret");
         veronica.setPhone("+593900000001");
         veronica.setRole(UserRole.ADMIN);
         veronica.setDocumentType(DocumentType.CEDULA_EC);
@@ -55,7 +57,6 @@ class UserRepositorySearchTest {
         veronicaOtherBranch.setFirstName("Veronica");
         veronicaOtherBranch.setLastName("Torres");
         veronicaOtherBranch.setEmail("veronica.other@clinic.com");
-        veronicaOtherBranch.setPassword("secret");
         veronicaOtherBranch.setPhone("+573000000002");
         veronicaOtherBranch.setRole(UserRole.DENTIST);
         veronicaOtherBranch.setDocumentType(DocumentType.CEDULA_CO);
@@ -84,7 +85,6 @@ class UserRepositorySearchTest {
         activeDoctor.setFirstName("Ana");
         activeDoctor.setLastName("Lopez");
         activeDoctor.setEmail("ana.lopez@clinic.com");
-        activeDoctor.setPassword("secret");
         activeDoctor.setPhone("+593900000010");
         activeDoctor.setRole(UserRole.DENTIST);
         activeDoctor.setDocumentType(DocumentType.CEDULA_EC);
@@ -97,7 +97,6 @@ class UserRepositorySearchTest {
         inactiveDoctor.setFirstName("Bruno");
         inactiveDoctor.setLastName("Perez");
         inactiveDoctor.setEmail("bruno.perez@clinic.com");
-        inactiveDoctor.setPassword("secret");
         inactiveDoctor.setPhone("+593900000011");
         inactiveDoctor.setRole(UserRole.DENTIST);
         inactiveDoctor.setDocumentType(DocumentType.CEDULA_EC);

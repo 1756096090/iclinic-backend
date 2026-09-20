@@ -56,20 +56,102 @@
 
 ## 🚀 INICIO RÁPIDO
 
-### 1. Ejecutar Backend (H2 en memoria)
-```bash
-./gradlew bootRun
+### 1. Elegir perfil de base de datos
+
+El perfil activo se define en `src/main/resources/application.properties`
+(`spring.profiles.active`). Actualmente el valor por defecto es **`postgres`**.
+
+| Perfil | Base de datos | Esquema | Datos |
+|--------|---------------|---------|-------|
+| `h2` | H2 en memoria | Hibernate `create-drop` | `import.sql` |
+| `postgres` | PostgreSQL 16 (Docker) | Flyway (`ddl-auto=validate`) | ninguno |
+| `postgres,dev` | PostgreSQL 16 (Docker) | Flyway | `db/seed/dev-seed.sql` (idempotente) |
+
+La variable de entorno tiene prioridad sobre el fichero, así que no hace falta
+editar nada para cambiar de una a otra:
+
+```powershell
+# H2 — arranque rápido, sin Docker
+$env:SPRING_PROFILES_ACTIVE="h2"; ./gradlew bootRun
+
+# PostgreSQL con datos de prueba
+$env:SPRING_PROFILES_ACTIVE="postgres,dev"; ./gradlew bootRun
 ```
 
-### 2. Acceder a Interfaces
+Equivalente en bash:
+
+```bash
+SPRING_PROFILES_ACTIVE=h2 ./gradlew bootRun
+```
+
+O por argumento, solo para ese arranque:
+
+```bash
+./gradlew bootRun --args="--spring.profiles.active=h2"
+```
+
+> ⚠️ Con el perfil `postgres`, `ddl-auto` es `validate`: si una entidad no cuadra
+> con las migraciones de `db/migration/`, la app **falla al arrancar** en vez de
+> corregir el esquema sola.
+
+### 2. Levantar PostgreSQL (solo perfil `postgres`)
+
+```bash
+docker compose up -d
+docker ps          # iclinic-postgres debe exponer 0.0.0.0:5432->5432/tcp
+```
+
+Credenciales (definidas en `docker-compose.yml`):
+
+| Campo | Valor |
+|-------|-------|
+| **Host** | `localhost` |
+| **Puerto** | `5432` |
+| **Base de datos** | `iclinic_db` |
+| **Usuario** | `postgres` |
+| **Contraseña** | `postgres123` |
+| **URL JDBC** | `jdbc:postgresql://localhost:5432/iclinic_db` |
+
+#### Conectarse con psql (sin instalar nada)
+
+```bash
+docker exec -it iclinic-postgres psql -U postgres -d iclinic_db
+```
+
+Dentro: `\dt` lista tablas, `\d <tabla>` describe una, `\q` sale.
+Para una consulta suelta sin entrar a la shell:
+
+```bash
+docker exec -it iclinic-postgres psql -U postgres -d iclinic_db -c "SELECT * FROM users LIMIT 5;"
+```
+
+#### Conectarse con DBeaver
+
+1. **Database → New Database Connection → PostgreSQL → Next**.
+2. En la pestaña **Main**, rellenar host, puerto, base, usuario y contraseña con
+   los valores de la tabla de arriba. Marcar **Save password**.
+3. Si es la primera conexión PostgreSQL, DBeaver pedirá el driver: pulsar **Download**.
+4. **Test Connection…** → debe decir *Connected* → **Finish**.
+5. Las tablas cuelgan del esquema `public`, no de la base directamente:
+   `iclinic_db` → `Schemas` → `public` → `Tables`.
+
+Si *Test Connection* falla:
+
+| Error | Causa habitual |
+|-------|----------------|
+| `Connection refused` | El contenedor no está corriendo, u otro proceso ocupa el 5432 (`netstat -ano \| findstr :5432`) |
+| `password authentication failed` | La contraseña es `postgres123`, no `postgres` |
+| `database "iclinic_db" does not exist` | El volumen se creó con otro nombre de base. `docker compose down -v && docker compose up -d` lo recrea (**borra los datos**) |
+
+### 3. Acceder a Interfaces
 | Recurso | URL |
 |---------|-----|
 | **Swagger API** | http://localhost:8080/swagger-ui/index.html |
-| **H2 Database** | http://localhost:8080/h2-console |
-| **JDBC URL** | `jdbc:h2:mem:iclinicdb` |
-| **Usuario** | `SA` (sin contraseña) |
+| **H2 Database** (solo perfil `h2`) | http://localhost:8080/h2-console |
+| **JDBC URL** (H2) | `jdbc:h2:mem:iclinicdb` |
+| **Usuario** (H2) | `sa` (sin contraseña) |
 
-### 3. Probar Endpoint
+### 4. Probar Endpoint
 ```bash
 curl -X GET "http://localhost:8080/api/v1/appointments/available-slots?branchId=1&doctorId=2&date=2026-05-22"
 ```

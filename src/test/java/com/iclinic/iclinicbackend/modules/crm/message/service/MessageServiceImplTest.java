@@ -32,6 +32,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import com.iclinic.iclinicbackend.modules.crm.exception.ChannelConnectionNotFoundException;
@@ -153,8 +154,8 @@ class MessageServiceImplTest {
                 .content("Quiero una cita")
                 .build();
 
-        when(channelConnectionRepository.findByCompanyIdAndChannelTypeAndStatus(
-                1L, ChannelType.WHATSAPP, ChannelConnectionStatus.ACTIVE))
+        when(channelConnectionRepository.findActiveByCompanyAndChannel(
+                eq(1L), eq(ChannelType.WHATSAPP), anyCollection()))
                 .thenReturn(Optional.of(connection));
         when(contactService.resolveContact(eq(connection), any()))
                 .thenReturn(contact);
@@ -179,8 +180,8 @@ class MessageServiceImplTest {
                 .channelType(ChannelType.WHATSAPP).companyId(999L)
                 .contactPhone("+593000000000").content("test").build();
 
-        when(channelConnectionRepository.findByCompanyIdAndChannelTypeAndStatus(
-                999L, ChannelType.WHATSAPP, ChannelConnectionStatus.ACTIVE))
+        when(channelConnectionRepository.findActiveByCompanyAndChannel(
+                eq(999L), eq(ChannelType.WHATSAPP), anyCollection()))
                 .thenReturn(Optional.empty());
 
         assertThrows(ChannelConnectionNotFoundException.class, () ->

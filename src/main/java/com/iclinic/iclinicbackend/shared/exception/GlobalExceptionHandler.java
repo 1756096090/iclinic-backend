@@ -1,7 +1,5 @@
 package com.iclinic.iclinicbackend.shared.exception;
 
-import com.google.firebase.auth.AuthErrorCode;
-import com.google.firebase.auth.FirebaseAuthException;
 import com.iclinic.iclinicbackend.modules.crm.exception.ChannelConnectionActiveNotFoundException;
 import com.iclinic.iclinicbackend.modules.crm.exception.ChannelConnectionNotFoundException;
 import com.iclinic.iclinicbackend.modules.crm.exception.ConversationNotFoundException;
@@ -10,6 +8,8 @@ import com.iclinic.iclinicbackend.modules.crm.exception.InvalidChannelConfigurat
 import com.iclinic.iclinicbackend.modules.crm.exception.MessageContentInvalidException;
 import com.iclinic.iclinicbackend.modules.crm.exception.TelegramWebhookException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -25,25 +25,23 @@ import java.util.stream.Collectors;
 @Slf4j
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(FirebaseAuthException.class)
-    public ResponseEntity<ErrorResponse> handleFirebaseAuthException(
-            FirebaseAuthException ex, WebRequest request) {
-        AuthErrorCode code = ex.getAuthErrorCode();
-        if (code == AuthErrorCode.EXPIRED_ID_TOKEN) {
-            log.warn("Firebase ID token expired");
-            return build(HttpStatus.UNAUTHORIZED,
-                    "La sesión ha expirado. Renueva el token o vuelve a iniciar sesión.",
-                    "EXPIRED_ID_TOKEN", request);
-        }
-        if (code == AuthErrorCode.INVALID_ID_TOKEN || code == AuthErrorCode.REVOKED_ID_TOKEN
-                || code == AuthErrorCode.USER_DISABLED) {
-            log.warn("Firebase authentication rejected: {}", code);
-            return build(HttpStatus.UNAUTHORIZED,
-                    "Credenciales no válidas. Vuelve a iniciar sesión.", code.name(), request);
-        }
-        log.error("Firebase authentication service failed: {}", code);
-        return build(HttpStatus.INTERNAL_SERVER_ERROR,
-                "Error al verificar la autenticación", "FIREBASE_AUTH_ERROR", request);
+    /**
+     * Fallos de autenticacion con Keycloak. El servidor de recursos ya rechaza el
+     * token invalido antes de llegar aqui; esto cubre lo que lanza el codigo de
+     * dominio al no poder resolver el sujeto.
+     */
+    @ExceptionHandler(JwtException.class)
+    public ResponseEntity<ErrorResponse> handleJwtException(JwtException ex, WebRequest request) {
+        log.warn("Token rechazado: {}", ex.getMessage());
+        return build(HttpStatus.UNAUTHORIZED,
+                "Credenciales no validas. Vuelve a iniciar sesion.", "INVALID_TOKEN", request);
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex, WebRequest request) {
+        log.warn("Acceso denegado: {}", ex.getMessage());
+        return build(HttpStatus.FORBIDDEN, "No tienes permiso para esta operacion",
+                "ACCESS_DENIED", request);
     }
 
     @ExceptionHandler(CompanyNotFoundException.class)
