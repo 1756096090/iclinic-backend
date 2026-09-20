@@ -205,11 +205,11 @@ public class UserServiceImpl implements UserService {
         user.setLastName(dto.getLastName());
         user.setEmail(dto.getEmail());
         user.setPhone(dto.getPhone());
-        // Se sigue escribiendo mientras `users.role` sea NOT NULL y nueve ficheros
-        // la lean; el rol autoritativo pasa a ser company_memberships.role y un
-        // test vigila que no diverjan. La columna y esta linea se van en el
-        // Bloque D. Ver la nota del PR.
-        user.setRole(dto.getRole());
+        // Se sigue escribiendo mientras `users.role` sea NOT NULL y los lectores
+        // la usen; el rol autoritativo pasa a ser company_memberships.role y un
+        // test vigila que no diverjan. Son DOS momentos distintos: esta escritura
+        // se retira en el paso 3, y la columna se borra en el bloque D.
+        user.setRole(dto.getRole());  // TODO(paso-3): dejar de escribir
         user.setDocumentType(
                 dto.getUserType().name().equals("INTERNATIONAL") ? DocumentType.PASSPORT : dto.getDocumentType());
         user.setActive(true);

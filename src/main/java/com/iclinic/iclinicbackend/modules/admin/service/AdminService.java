@@ -173,7 +173,7 @@ public class AdminService {
         user.setPhone(data.getPhone());
         // users.role NO SE ESCRIBE: el rol vive en company_memberships.role. La
         // columna queda de solo lectura hasta que el Bloque D la retire.
-        user.setRole(data.getRole());  // TODO(bloque-D): eliminar con la columna
+        user.setRole(data.getRole());  // TODO(paso-3): dejar de escribir; la columna se borra en el bloque D
         if (data.getDocumentType() != null) {
             user.setDocumentType(data.getDocumentType());
         }
@@ -186,7 +186,7 @@ public class AdminService {
         user.setLastName(dto.getLastName());
         user.setEmail(dto.getEmail());
         user.setPhone(dto.getPhone());
-        user.setRole(dto.getRole());  // TODO(bloque-D): eliminar con la columna
+        user.setRole(dto.getRole());  // TODO(paso-3): dejar de escribir; la columna se borra en el bloque D
         if (dto.getDocumentType() != null) {
             user.setDocumentType(dto.getDocumentType());
         }
