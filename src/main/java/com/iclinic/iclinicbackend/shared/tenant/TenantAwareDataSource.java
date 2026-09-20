@@ -33,8 +33,24 @@ import java.sql.SQLException;
 @Slf4j
 public class TenantAwareDataSource extends DelegatingDataSource {
 
-    public TenantAwareDataSource(DataSource delegate) {
+    /**
+     * Rol al que cambia cada conexión, o vacío para no cambiar.
+     * <p>
+     * Es lo que impide que en desarrollo —donde se conecta como {@code postgres},
+     * superusuario— RLS quede sin efecto. Un superusuario evita todas las
+     * políticas sin error y sin aviso: el aislamiento parecería activo y no lo
+     * estaría. Con {@code SET ROLE iclinic_app} la conexión queda sujeta aunque
+     * el usuario que abrió la sesión no lo estuviera.
+     * <p>
+     * Se deja vacío en el perfil de integración: allí los tests hacen su propio
+     * {@code SET ROLE} para poder comparar el comportamiento con y sin rol, y la
+     * carga del seed necesita saltarse la política.
+     */
+    private final String rolDeAplicacion;
+
+    public TenantAwareDataSource(DataSource delegate, String rolDeAplicacion) {
         super(delegate);
+        this.rolDeAplicacion = rolDeAplicacion == null ? "" : rolDeAplicacion.trim();
     }
 
     @Override
@@ -49,6 +65,17 @@ public class TenantAwareDataSource extends DelegatingDataSource {
 
     private Connection aplicarTenant(Connection conexion) throws SQLException {
         Long empresa = TenantContext.get();
+
+        if (!rolDeAplicacion.isEmpty()) {
+            try (java.sql.Statement st = conexion.createStatement()) {
+                // El nombre viene de configuracion, no de una peticion; aun asi se
+                // valida para que nadie pueda colar SQL por una propiedad.
+                if (!rolDeAplicacion.matches("[a-zA-Z_][a-zA-Z0-9_]*")) {
+                    throw new IllegalStateException("Nombre de rol no valido: " + rolDeAplicacion);
+                }
+                st.execute("SET ROLE " + rolDeAplicacion);
+            }
+        }
 
         // Siempre se escribe, incluso cuando no hay tenant: hay que BORRAR el de
         // la conexión anterior. Dejarlo puesto es exactamente la fuga entre

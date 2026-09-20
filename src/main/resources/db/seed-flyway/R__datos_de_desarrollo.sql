@@ -1,4 +1,20 @@
 -- =============================================================================
+-- Datos de desarrollo. Migracion REPETIBLE (R__), no versionada: se reejecuta
+-- cuando cambia su contenido y es idempotente (ON CONFLICT DO NOTHING).
+--
+-- POR QUE ES UNA MIGRACION Y NO spring.sql.init. Desde que la aplicacion opera
+-- como iclinic_app, sus conexiones estan sujetas a RLS, y un INSERT sin tenant
+-- fijado lo rechaza la politica. El seed no es trafico de aplicacion: es carga
+-- de datos, y va por la conexion de Flyway, que tiene BYPASSRLS.
+--
+-- SOLO se carga con el perfil `dev` o `it`, que son los que anaden
+-- classpath:db/seed-flyway a spring.flyway.locations. En `postgres` a secas no
+-- entra.
+-- =============================================================================
+
+SET row_security = off;
+
+-- =============================================================================
 -- Datos de prueba para desarrollo local sobre PostgreSQL (perfil `dev`).
 --
 -- NO es una migración de Flyway: se ejecuta por `spring.sql.init` y sólo cuando

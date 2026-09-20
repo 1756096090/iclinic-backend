@@ -203,8 +203,15 @@ DROP INDEX IF EXISTS idx_blocked_slots_branch_start;
 -- company_id" — y lo hace en el backfill de arranque, así que la aplicación no
 -- levanta.
 --
--- El trigger deriva el valor del padre, que además garantiza que no puede quedar
+-- El trigger deriva el valor del padre, que ademas garantiza que no puede quedar
 -- incoherente aunque alguien inserte a mano.
+--
+-- ES TEMPORAL. Se retira en el Bloque D: alli membership_branches gana
+-- valid_from, valid_until, revoked_at, revoked_by_user_id y revocation_reason,
+-- deja de poder ser la tabla de union de un @ManyToMany y pasa a ser una
+-- @Entity propia con su company_id mapeado como cualquier otro campo. Entonces
+-- este trigger sobra. Sin esta nota, dentro de seis meses nadie sabria por que
+-- existe.
 
 CREATE FUNCTION membership_branches_derivar_empresa() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN

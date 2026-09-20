@@ -32,12 +32,14 @@ public class TenantConfig {
      * conexión "por otro lado" y saltarse el tenant.
      */
     @Bean
-    public static BeanPostProcessor envolverDataSourceConTenant() {
+    public static BeanPostProcessor envolverDataSourceConTenant(
+            org.springframework.core.env.Environment entorno) {
+        String rol = entorno.getProperty("iclinic.tenant.db-role", "");
         return new BeanPostProcessor() {
             @Override
             public Object postProcessAfterInitialization(Object bean, String nombre) throws BeansException {
                 if (bean instanceof DataSource ds && !(bean instanceof TenantAwareDataSource)) {
-                    return new TenantAwareDataSource(ds);
+                    return new TenantAwareDataSource(ds, rol);
                 }
                 return bean;
             }

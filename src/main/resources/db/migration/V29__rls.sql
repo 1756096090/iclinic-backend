@@ -57,6 +57,12 @@ GRANT ALL ON SCHEMA public TO iclinic_migrator;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO iclinic_migrator;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO iclinic_migrator;
 
+-- Para que la aplicacion pueda hacer SET ROLE iclinic_app con el usuario de
+-- conexion que tenga. Sin esto, en desarrollo se conecta como `postgres`
+-- —superusuario— y RLS no se le aplica: el aislamiento no protegeria nada y
+-- todo pareceria correcto. Ver ComprobacionDeAislamiento y TenantAwareDataSource.
+GRANT iclinic_app TO CURRENT_USER;
+
 -- ─────────────── 2. La política, en bucle ───────────────────────────────────
 -- En bucle y no tabla por tabla: una tabla con company_id sin política tiene
 -- cero aislamiento y nadie se entera. Escribirlas a mano garantiza que algún día
