@@ -3,6 +3,7 @@ package com.iclinic.iclinicbackend.config;
 import com.iclinic.iclinicbackend.modules.auth.filter.TokenRevocationFilter;
 import com.iclinic.iclinicbackend.modules.user.repository.UserRepository;
 import com.iclinic.iclinicbackend.shared.security.AudienceValidator;
+import com.iclinic.iclinicbackend.shared.tenant.TenantContextFilter;
 import com.iclinic.iclinicbackend.shared.security.KeycloakRolesConverter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,16 +35,19 @@ import java.util.List;
 public class SecurityConfig {
 
     private final UserRepository userRepository;
+    private final TenantContextFilter tenantContextFilter;
     private final String issuerUri;
     private final String jwkSetUri;
     private final String clientId;
 
     public SecurityConfig(
             UserRepository userRepository,
+            TenantContextFilter tenantContextFilter,
             @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}") String issuerUri,
             @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:}") String jwkSetUri,
             @Value("${iclinic.keycloak.client-id}") String clientId) {
         this.userRepository = userRepository;
+        this.tenantContextFilter = tenantContextFilter;
         this.issuerUri = issuerUri;
         this.jwkSetUri = jwkSetUri.isBlank()
                 ? issuerUri + "/protocol/openid-connect/certs"
@@ -124,7 +128,6 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/crm/webhooks/**").permitAll()
                 .requestMatchers("/swagger-ui/**", "/swagger-ui.html",
                                  "/api-docs/**", "/api-docs", "/v3/api-docs/**").permitAll()
-                .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                 // La autenticación del WebSocket se comprueba en el CONNECT de STOMP
                 // y cada suscripción se autoriza aparte. Ver NotificationChannelInterceptor.
@@ -185,7 +188,10 @@ public class SecurityConfig {
             // el filtro corría con el contexto vacío: no había autenticación que
             // inspeccionar y el kill-switch no hacía absolutamente nada, en
             // silencio y con el test en verde si solo se mira el 200.
-            .addFilterAfter(tokenRevocationFilter(), BearerTokenAuthenticationFilter.class);
+            .addFilterAfter(tokenRevocationFilter(), BearerTokenAuthenticationFilter.class)
+            // Despues del de revocacion: necesita el User que aquel deja en los
+            // detalles de la autenticacion.
+            .addFilterAfter(tenantContextFilter, TokenRevocationFilter.class);
 
         return http.build();
     }

@@ -1,5 +1,6 @@
 package com.iclinic.iclinicbackend.modules.crm.conversation.controller;
 
+import com.iclinic.iclinicbackend.support.AbstractPostgresIT;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.iclinic.iclinicbackend.modules.crm.conversation.dto.ConversationResponseDto;
 import com.iclinic.iclinicbackend.modules.crm.conversation.service.ConversationService;
@@ -24,11 +25,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import org.springframework.test.context.ActiveProfiles;
 
-@ActiveProfiles("test")
+@ActiveProfiles("it")
 @SpringBootTest
 @AutoConfigureMockMvc(addFilters = false) // desactiva la cadena de seguridad para el test MVC
 @DisplayName("ConversationController Tests")
-class ConversationControllerTest {
+class ConversationControllerIT extends AbstractPostgresIT {
 
     @Autowired
     private MockMvc mockMvc;

@@ -1,12 +1,13 @@
 package com.iclinic.iclinicbackend;
 
+import com.iclinic.iclinicbackend.support.AbstractPostgresIT;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 
-@ActiveProfiles("test")
+@ActiveProfiles("it")
 @SpringBootTest
-class IclinicBackendApplicationTests {
+class IclinicBackendApplicationIT extends AbstractPostgresIT {
 
     @Test
     void contextLoads() {

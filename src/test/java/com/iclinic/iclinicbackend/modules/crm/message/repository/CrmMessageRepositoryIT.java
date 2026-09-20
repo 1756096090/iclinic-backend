@@ -1,5 +1,6 @@
 package com.iclinic.iclinicbackend.modules.crm.message.repository;
 
+import com.iclinic.iclinicbackend.support.AbstractPostgresIT;
 import com.iclinic.iclinicbackend.modules.company.entity.EcuadorianCompany;
 import com.iclinic.iclinicbackend.modules.company.repository.CompanyRepository;
 import com.iclinic.iclinicbackend.modules.crm.channel.entity.ChannelConnection;
@@ -23,11 +24,11 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.*;
 import org.springframework.test.context.ActiveProfiles;
 
-@ActiveProfiles("test")
+@ActiveProfiles("it")
 @SpringBootTest
 @Transactional
 @DisplayName("CrmMessageRepository Tests")
-class CrmMessageRepositoryTest {
+class CrmMessageRepositoryIT extends AbstractPostgresIT {
 
     @Autowired
     private CrmMessageRepository messageRepository;

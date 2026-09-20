@@ -16,7 +16,18 @@ import java.util.UUID;
 @SuppressWarnings("unused")
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
-    Optional<User> findByKeycloakUserId(UUID keycloakUserId);
+    /**
+     * Resuelve el sujeto del token con su empresa y sucursal YA CARGADAS.
+     * <p>
+     * El {@code JOIN FETCH} no es una optimizacion: el {@code User} que devuelve
+     * esta consulta vive en los detalles de la autenticacion y se usa despues de
+     * que la sesion se haya cerrado. Sin el, cualquier lectura de la relacion
+     * —{@code user.getCompany().getName()} en {@code /api/v1/auth/me}, por
+     * ejemplo— lanza {@code LazyInitializationException} y sale un 500.
+     */
+    @Query("SELECT u FROM User u LEFT JOIN FETCH u.company LEFT JOIN FETCH u.branch "
+         + "WHERE u.keycloakUserId = :keycloakUserId")
+    Optional<User> findByKeycloakUserId(@Param("keycloakUserId") UUID keycloakUserId);
     boolean existsByEmail(String email);
     boolean existsByKeycloakUserId(UUID keycloakUserId);
     List<User> findByRole(UserRole role);
@@ -68,4 +79,14 @@ public interface UserRepository extends JpaRepository<User, Long> {
              order by u.createdAt asc
              """)
      List<User> findAllSuperAdmins();
+
+    /**
+     * El id de empresa sin cargar la entidad.
+     * <p>
+     * Lo usa el puente de {@code TenantContextFilter}, que trabaja con un
+     * {@code User} ya desatachado: acceder a la relacion perezosa alli lanza
+     * {@code LazyInitializationException} y acaba en un 500.
+     */
+    @Query("SELECT u.company.id FROM User u WHERE u.id = :userId")
+    Optional<Long> findCompanyIdByUserId(@Param("userId") Long userId);
 }
