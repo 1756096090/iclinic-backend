@@ -17,7 +17,7 @@ import org.springframework.test.context.TestPropertySource;
  * No es un test de la aplicación: no valida comportamiento.
  */
 @SpringBootTest
-@ActiveProfiles("test")
+@ActiveProfiles("it")
 @TestPropertySource(properties = {
         "spring.datasource.url=jdbc:h2:mem:schemagen;DB_CLOSE_DELAY=-1",
         "spring.datasource.driver-class-name=org.h2.Driver",

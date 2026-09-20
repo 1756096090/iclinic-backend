@@ -14,6 +14,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -42,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * configuración nuestra, no de Spring, y un test con mocks los daría por buenos
  * aunque estuvieran mal montados.
  */
+@ActiveProfiles("it")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class KeycloakAuthenticationIT extends AbstractPostgresIT {
 

@@ -1,5 +1,6 @@
 package com.iclinic.iclinicbackend.modules.crm.channel.service;
 
+import com.iclinic.iclinicbackend.support.AbstractPostgresIT;
 import com.iclinic.iclinicbackend.modules.company.entity.Company;
 import com.iclinic.iclinicbackend.modules.company.repository.CompanyRepository;
 import com.iclinic.iclinicbackend.modules.crm.channel.entity.ChannelConnection;
@@ -20,10 +21,10 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.*;
 import org.springframework.test.context.ActiveProfiles;
 
-@ActiveProfiles("test")
+@ActiveProfiles("it")
 @SpringBootTest
 @Transactional
-class ChannelConnectionSoftDeleteTest {
+class ChannelConnectionSoftDeleteIT extends AbstractPostgresIT {
 
     @Autowired
     private ChannelConnectionRepository channelConnectionRepository;

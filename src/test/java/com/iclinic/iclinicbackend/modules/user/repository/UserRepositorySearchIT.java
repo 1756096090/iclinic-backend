@@ -1,4 +1,6 @@
 package com.iclinic.iclinicbackend.modules.user.repository;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import com.iclinic.iclinicbackend.support.AbstractPostgresIT;
 import com.iclinic.iclinicbackend.modules.branch.entity.ClinicBranch;
 import com.iclinic.iclinicbackend.modules.branch.repository.BranchRepository;
 import com.iclinic.iclinicbackend.modules.company.entity.EcuadorianCompany;
@@ -17,9 +19,10 @@ import org.springframework.data.domain.Sort;
 import org.springframework.test.context.ActiveProfiles;
 import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest
-@ActiveProfiles("test")
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@ActiveProfiles("it")
 @DisplayName("UserRepository Search Tests")
-class UserRepositorySearchTest {
+class UserRepositorySearchIT extends AbstractPostgresIT {
     @Autowired private UserRepository userRepository;
     @Autowired private BranchRepository branchRepository;
     @Autowired private CompanyRepository companyRepository;
@@ -29,8 +32,14 @@ class UserRepositorySearchTest {
         assertThat(user.getRole()).isEqualTo(UserRole.SUPER_ADMIN);
         assertThat(user.getActive()).isTrue();
         assertThat(user.getIsPlatformAdmin()).isTrue();
-        assertThat(user.getCompany().getId()).isEqualTo(1L);
-        assertThat(user.getBranch().getId()).isEqualTo(1L);
+        // Un administrador de plataforma NO pertenece a ninguna clinica: su acceso
+        // viene de is_platform_admin. Antes el seed le ponia company_id = 1, una
+        // fila que se contradecia a si misma y que la guardia previa al DROP
+        // detecto. Ver V10.
+        assertThat(user.getCompany())
+                .as("el admin de plataforma no cuelga de ninguna empresa")
+                .isNull();
+        assertThat(user.getBranch()).isNull();
         // La credencial vive en Keycloak: aqui solo hay proyeccion del sujeto.
         assertThat(user.getKeycloakUserId()).isNotNull();
         assertThat(user.getSubjectType()).isEqualTo(SubjectType.HUMAN);

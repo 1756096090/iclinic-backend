@@ -35,9 +35,11 @@ INSERT INTO users (id, first_name, last_name, email, phone, role, document_type,
     (4, 'Dr. Pedro',  'Martínez López',    'pedro.martinez@clinica.co',  '+573001234567', 'ADMIN',        'CEDULA_CO', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'COLOMBIAN',  2, 3, '79876543',   '00000000-0000-4000-8000-000000000004', 'HUMAN', CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO NOTHING;
 
--- Administrador de plataforma.
+-- Administrador de plataforma: SIN empresa ni sucursal. Su acceso viene de
+-- is_platform_admin, no de pertenecer a ninguna clinica. Ponerle company_id
+-- creaba una fila que se contradecia a si misma; ver V10.
 INSERT INTO users (id, first_name, last_name, email, role, document_type, active, is_platform_admin, created_at, updated_at, user_type, company_id, branch_id, keycloak_user_id, subject_type, tokens_valid_from) VALUES
-    (5, 'Isaac', '', 'isaaccs2003@gmail.com', 'SUPER_ADMIN', 'PASSPORT', true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'ECUADORIAN', 1, 1, '00000000-0000-4000-8000-000000000005', 'HUMAN', CURRENT_TIMESTAMP)
+    (5, 'Isaac', '', 'isaaccs2003@gmail.com', 'SUPER_ADMIN', 'PASSPORT', true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'ECUADORIAN', NULL, NULL, '00000000-0000-4000-8000-000000000005', 'HUMAN', CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO NOTHING;
 
 -- ───────────────────────── Conexiones de canal ───────────────────────────────
@@ -63,42 +65,42 @@ INSERT INTO crm_contact_phones (id, contact_id, raw_phone, normalized_phone, com
     (4, 4, '+573002345679', '+573002345679', 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO crm_channel_user_links (id, contact_id, channel_type, external_user_id, external_chat_id, username, display_name, created_at) VALUES
-    (1, 1, 'WHATSAPP', '593987654322', '593987654322', NULL, 'Marco Avalos Quezada',   CURRENT_TIMESTAMP),
-    (2, 3, 'WHATSAPP', '573001234568', '573001234568', NULL, 'Felipe Gómez Hernández', CURRENT_TIMESTAMP),
-    (3, 4, 'WHATSAPP', '573002345679', '573002345679', NULL, 'Valentina Cruz López',   CURRENT_TIMESTAMP)
+INSERT INTO crm_channel_user_links (id, contact_id, channel_type, external_user_id, external_chat_id, username, display_name, created_at, company_id) VALUES
+    (1, 1, 'WHATSAPP', '593987654322', '593987654322', NULL, 'Marco Avalos Quezada',   CURRENT_TIMESTAMP, 1),
+    (2, 3, 'WHATSAPP', '573001234568', '573001234568', NULL, 'Felipe Gómez Hernández', CURRENT_TIMESTAMP, 2),
+    (3, 4, 'WHATSAPP', '573002345679', '573002345679', NULL, 'Valentina Cruz López',   CURRENT_TIMESTAMP, 2)
 ON CONFLICT (id) DO NOTHING;
 
 -- ────────────────────────── Conversaciones CRM ───────────────────────────────
-INSERT INTO crm_conversations (id, contact_id, channel_connection_id, assigned_user_id, status, last_message_at, created_at, updated_at) VALUES
-    (1, 1, 1, 2, 'OPEN',   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2, 2, 3, 3, 'OPEN',   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (3, 3, 2, 4, 'CLOSED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (4, 4, 2, 4, 'OPEN',   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+INSERT INTO crm_conversations (id, contact_id, channel_connection_id, assigned_user_id, status, last_message_at, created_at, updated_at, company_id) VALUES
+    (1, 1, 1, 2, 'OPEN',   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1),
+    (2, 2, 3, 3, 'OPEN',   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1),
+    (3, 3, 2, 4, 'CLOSED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 2),
+    (4, 4, 2, 4, 'OPEN',   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 2)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO crm_messages (id, conversation_id, direction, channel_type, message_type, status, external_message_id, content, sent_by_user_id, created_at, updated_at) VALUES
-    (1, 1, 'INBOUND',  'WHATSAPP', 'TEXT', 'RECEIVED',  'msg_ext_001', 'Hola, necesito información sobre servicios dentales',              NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2, 1, 'OUTBOUND', 'WHATSAPP', 'TEXT', 'DELIVERED', 'msg_ext_002', 'Bienvenido, estamos listos para asistirte. ¿Cuál es tu consulta?', 2,    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (3, 2, 'INBOUND',  'TELEGRAM', 'TEXT', 'RECEIVED',  'msg_ext_003', '¿Cuál es el horario de atención?',                                 NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (4, 3, 'INBOUND',  'WHATSAPP', 'TEXT', 'RECEIVED',  'msg_ext_004', 'Quisiera agendar una cita',                                        NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (5, 4, 'OUTBOUND', 'WHATSAPP', 'TEXT', 'DELIVERED', 'msg_ext_005', 'Gracias por contactarnos. Un asesor te contactará pronto.',        4,    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+INSERT INTO crm_messages (id, conversation_id, direction, channel_type, message_type, status, external_message_id, content, sent_by_user_id, created_at, updated_at, company_id) VALUES
+    (1, 1, 'INBOUND',  'WHATSAPP', 'TEXT', 'RECEIVED',  'msg_ext_001', 'Hola, necesito información sobre servicios dentales',              NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1),
+    (2, 1, 'OUTBOUND', 'WHATSAPP', 'TEXT', 'DELIVERED', 'msg_ext_002', 'Bienvenido, estamos listos para asistirte. ¿Cuál es tu consulta?', 2,    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1),
+    (3, 2, 'INBOUND',  'TELEGRAM', 'TEXT', 'RECEIVED',  'msg_ext_003', '¿Cuál es el horario de atención?',                                 NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1),
+    (4, 3, 'INBOUND',  'WHATSAPP', 'TEXT', 'RECEIVED',  'msg_ext_004', 'Quisiera agendar una cita',                                        NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 2),
+    (5, 4, 'OUTBOUND', 'WHATSAPP', 'TEXT', 'DELIVERED', 'msg_ext_005', 'Gracias por contactarnos. Un asesor te contactará pronto.',        4,    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 2)
 ON CONFLICT (id) DO NOTHING;
 
 -- ──────────────────────── Horarios de doctores ───────────────────────────────
 -- Dra. María (id 2) en sucursal 1, L-V 09:00-17:00, slots de 30 min.
 -- Dr. Pedro (id 4) en sucursal 3, L-V 10:00-18:00, slots de 30 min.
-INSERT INTO branch_schedules (id, branch_id, doctor_id, day_of_week, start_time, end_time, slot_duration_minutes, active, created_at, updated_at) VALUES
-    (1,  1, 2, 'MONDAY',    '09:00', '17:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2,  1, 2, 'TUESDAY',   '09:00', '17:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (3,  1, 2, 'WEDNESDAY', '09:00', '17:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (4,  1, 2, 'THURSDAY',  '09:00', '17:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (5,  1, 2, 'FRIDAY',    '09:00', '17:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (6,  3, 4, 'MONDAY',    '10:00', '18:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (7,  3, 4, 'TUESDAY',   '10:00', '18:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (8,  3, 4, 'WEDNESDAY', '10:00', '18:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (9,  3, 4, 'THURSDAY',  '10:00', '18:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (10, 3, 4, 'FRIDAY',    '10:00', '18:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+INSERT INTO branch_schedules (id, branch_id, doctor_id, day_of_week, start_time, end_time, slot_duration_minutes, active, created_at, updated_at, company_id) VALUES
+    (1,  1, 2, 'MONDAY',    '09:00', '17:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1),
+    (2,  1, 2, 'TUESDAY',   '09:00', '17:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1),
+    (3,  1, 2, 'WEDNESDAY', '09:00', '17:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1),
+    (4,  1, 2, 'THURSDAY',  '09:00', '17:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1),
+    (5,  1, 2, 'FRIDAY',    '09:00', '17:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1),
+    (6,  3, 4, 'MONDAY',    '10:00', '18:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 2),
+    (7,  3, 4, 'TUESDAY',   '10:00', '18:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 2),
+    (8,  3, 4, 'WEDNESDAY', '10:00', '18:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 2),
+    (9,  3, 4, 'THURSDAY',  '10:00', '18:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 2),
+    (10, 3, 4, 'FRIDAY',    '10:00', '18:00', 30, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 2)
 ON CONFLICT (id) DO NOTHING;
 
 -- ───────────── Resincronizar secuencias IDENTITY tras IDs explícitos ─────────

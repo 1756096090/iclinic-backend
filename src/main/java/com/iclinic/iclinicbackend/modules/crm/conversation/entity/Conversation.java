@@ -39,8 +39,19 @@ public class Conversation extends BaseEntity {
     @Column(nullable = false)
     private Instant lastMessageAt;
 
+
+    /**
+     * Empresa propietaria, denormalizada. NO es redundante: es la columna sobre
+     * la que actua la politica de RLS y la que respalda la FK compuesta. Se
+     * deriva del padre en {@code @PrePersist} para que ningun camino de alta
+     * pueda dejarla incoherente.
+     */
+    @Column(name = "company_id", nullable = false)
+    private Long companyId;
+
     @PrePersist
     public void prePersist() {
+        if (this.companyId == null && contact != null) this.companyId = contact.getCompany().getId();
         super.onCreate();
         if (this.lastMessageAt == null) this.lastMessageAt = Instant.now();
         if (this.status == null) this.status = ConversationStatus.OPEN;

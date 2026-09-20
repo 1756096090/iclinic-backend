@@ -1,5 +1,7 @@
 package com.iclinic.iclinicbackend.modules.company.repository;
 
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import com.iclinic.iclinicbackend.support.AbstractPostgresIT;
 import com.iclinic.iclinicbackend.modules.company.entity.ColombianCompany;
 import com.iclinic.iclinicbackend.modules.company.entity.EcuadorianCompany;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,9 +16,10 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DataJpaTest
-@ActiveProfiles("test")
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@ActiveProfiles("it")
 @DisplayName("CompanyRepository Tests")
-class CompanyRepositoryTest {
+class CompanyRepositoryIT extends AbstractPostgresIT {
 
     @Autowired
     private CompanyRepository companyRepository;
