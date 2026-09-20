@@ -36,6 +36,7 @@ public class UserServiceImpl implements UserService {
     private final BranchRepository branchRepository;
     private final UserMapper userMapper;
     private final CurrentUserService currentUserService;
+    private final com.iclinic.iclinicbackend.modules.access.service.MembershipService membershipService;
 
     @Override
     public UserResponseDto create(CreateUserRequestDto dto) {
@@ -47,12 +48,25 @@ public class UserServiceImpl implements UserService {
 
         User user = buildUserByType(dto);
         applyCommonFields(user, dto);
-        assignRelations(user, dto);
+        Company company = assignRelations(user, dto);
 
         // Multitenant: el usuario actual sólo puede crear dentro de su empresa y no escalar rol.
         currentUserService.assertCanManageUser(user);
 
-        return userMapper.toResponseDto(userRepository.save(user));
+        User guardado = userRepository.save(user);
+
+        // Misma transaccion que el alta: un usuario sin membresia no pertenece a
+        // ninguna clinica, y en cuanto se retire el puente no veria nada. Si esto
+        // falla, el usuario tampoco queda.
+        if (company != null) {
+            membershipService.conceder(guardado, company, dto.getRole(), guardado.getBranch());
+        } else if (!Boolean.TRUE.equals(guardado.getIsPlatformAdmin())) {
+            throw new IllegalArgumentException(
+                    "Un usuario que no es administrador de plataforma necesita empresa: "
+                    + "sin ella no tendria pertenencia a ninguna clinica.");
+        }
+
+        return userMapper.toResponseDto(guardado);
     }
 
     @Override
@@ -191,13 +205,18 @@ public class UserServiceImpl implements UserService {
         user.setLastName(dto.getLastName());
         user.setEmail(dto.getEmail());
         user.setPhone(dto.getPhone());
-        user.setRole(dto.getRole());
+        // Se sigue escribiendo mientras `users.role` sea NOT NULL y los lectores
+        // la usen; el rol autoritativo pasa a ser company_memberships.role y un
+        // test vigila que no diverjan. Son DOS momentos distintos: esta escritura
+        // se retira en el paso 3, y la columna se borra en el bloque D.
+        user.setRole(dto.getRole());  // TODO(paso-3): dejar de escribir
         user.setDocumentType(
                 dto.getUserType().name().equals("INTERNATIONAL") ? DocumentType.PASSPORT : dto.getDocumentType());
         user.setActive(true);
     }
 
-    private void assignRelations(User user, CreateUserRequestDto dto) {
+    /** Devuelve la empresa asignada, que hace falta para crear la membresia. */
+    private Company assignRelations(User user, CreateUserRequestDto dto) {
         Company company = null;
         if (dto.getCompanyId() != null) {
             company = companyRepository.findById(dto.getCompanyId())
@@ -211,6 +230,7 @@ public class UserServiceImpl implements UserService {
             currentUserService.assertBranchInCompany(branch, dto.getCompanyId());
             user.setBranch(branch);
         }
+        return company;
     }
 
     /**

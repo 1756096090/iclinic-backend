@@ -29,6 +29,7 @@ public class AdminService {
     private final BranchRepository branchRepository;
     private final UserRepository userRepository;
     private final CurrentUserService currentUserService;
+    private final com.iclinic.iclinicbackend.modules.access.service.MembershipService membershipService;
 
     public ClientOnboardingResponseDto createClient(ClientOnboardingRequestDto dto) {
         currentUserService.assertSuperAdmin();
@@ -50,6 +51,10 @@ public class AdminService {
         user.setBranch(branch);
         user.setActive(true);
         user = userRepository.save(user);
+
+        // Misma transaccion: si esto falla, el usuario tampoco queda. Un usuario
+        // sin membresia es el huerfano que este cambio existe para eliminar.
+        membershipService.conceder(user, company, dto.getAdminUser().getRole(), branch);
 
         AuthUserResponseDto userDto = toAuthDto(user);
 
@@ -98,6 +103,8 @@ public class AdminService {
         user.setBranch(branch);
         user.setActive(true);
         user = userRepository.save(user);
+
+        membershipService.conceder(user, company, dto.getRole(), branch);
 
         return toAuthDto(user);
     }
@@ -164,7 +171,9 @@ public class AdminService {
         user.setLastName(data.getLastName());
         user.setEmail(data.getEmail());
         user.setPhone(data.getPhone());
-        user.setRole(data.getRole());
+        // users.role NO SE ESCRIBE: el rol vive en company_memberships.role. La
+        // columna queda de solo lectura hasta que el Bloque D la retire.
+        user.setRole(data.getRole());  // TODO(paso-3): dejar de escribir; la columna se borra en el bloque D
         if (data.getDocumentType() != null) {
             user.setDocumentType(data.getDocumentType());
         }
@@ -177,7 +186,7 @@ public class AdminService {
         user.setLastName(dto.getLastName());
         user.setEmail(dto.getEmail());
         user.setPhone(dto.getPhone());
-        user.setRole(dto.getRole());
+        user.setRole(dto.getRole());  // TODO(paso-3): dejar de escribir; la columna se borra en el bloque D
         if (dto.getDocumentType() != null) {
             user.setDocumentType(dto.getDocumentType());
         }
