@@ -1,7 +1,7 @@
 package com.iclinic.iclinicbackend.modules.auth.service;
 
+import com.iclinic.iclinicbackend.modules.access.service.AmbitoDeUsuario;
 import com.iclinic.iclinicbackend.modules.branch.entity.Branch;
-import com.iclinic.iclinicbackend.modules.company.entity.Company;
 import com.iclinic.iclinicbackend.modules.user.entity.User;
 import com.iclinic.iclinicbackend.modules.user.repository.UserRepository;
 import com.iclinic.iclinicbackend.shared.enums.UserRole;
@@ -14,11 +14,29 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.UUID;
 
+/**
+ * Las mismas preguntas de antes, pero referidas al usuario autenticado y
+ * respondidas por {@link AmbitoDeUsuario}.
+ * <p>
+ * Hasta ahora esta clase leía {@code user.getRole()}, {@code user.getCompany()} y
+ * {@code user.getBranch()} directamente. Esas tres columnas desaparecen: el rol
+ * vive en {@code company_memberships.role} y el ámbito en la propia membresía.
+ * Aquí no se decide nada nuevo, solo se traduce «el usuario actual» a la firma
+ * con {@code userId} y {@code companyId}.
+ * <p>
+ * <b>Cambio de semántica que conviene conocer.</b> {@code SUPER_ADMIN} dejaba de
+ * ser un rol de empresa: quien manda ahora es {@code is_platform_admin}. Los
+ * métodos que antes preguntaban {@code role == SUPER_ADMIN} preguntan por el
+ * administrador de plataforma, que es lo que de verdad querían decir. Mientras
+ * {@code users.role} exista, ambos coinciden —V12 los sincronizó y hay un test
+ * que vigila que no diverjan—, así que el comportamiento observable no cambia.
+ */
 @Service
 @RequiredArgsConstructor
 public class CurrentUserService {
 
     private final UserRepository userRepository;
+    private final AmbitoDeUsuario ambito;
 
     public User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -39,45 +57,31 @@ public class CurrentUserService {
         }
     }
 
+    private Long idActual() {
+        return getCurrentUser().getId();
+    }
+
+    // ───────────────────────── Rol ───────────────────────────────────────────
+
+    /**
+     * Administrador de plataforma. Conserva el nombre {@code isSuperAdmin} porque
+     * lo llaman doce sitios y renombrarlo aquí solo añadiría ruido al diff; el
+     * nombre se corrige en el bloque D, cuando el concepto pase a ser un rol de
+     * realm.
+     */
     public boolean isSuperAdmin() {
-        return getCurrentUser().getRole() == UserRole.SUPER_ADMIN;
+        return ambito.esAdminDePlataforma(idActual());
     }
 
     public boolean isCompanyAdmin() {
-        UserRole role = getCurrentUser().getRole();
-        return role == UserRole.SUPER_ADMIN || role == UserRole.ADMIN;
+        Long id = idActual();
+        return ambito.esAdminDePlataforma(id)
+                || ambito.tieneRolEnAlgunaEmpresa(id, UserRole.ADMIN);
     }
 
-    public void assertCanAccessCompany(Long companyId) {
-        User user = getCurrentUser();
-        if (user.getRole() == UserRole.SUPER_ADMIN) return;
-        if (user.getCompany() == null || !user.getCompany().getId().equals(companyId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Acceso denegado a esta empresa");
-        }
-    }
-
-    public void assertCanAccessBranch(Long branchId) {
-        User user = getCurrentUser();
-        if (user.getRole() == UserRole.SUPER_ADMIN) return;
-        if (user.getBranch() != null && !user.getBranch().getId().equals(branchId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Acceso denegado a esta sucursal");
-        }
-    }
-
-    public void assertCanManageUser(User targetUser) {
-        User current = getCurrentUser();
-        if (current.getRole() == UserRole.SUPER_ADMIN) return;
-        if (current.getRole() == UserRole.ADMIN) {
-            if (targetUser.getRole() == UserRole.SUPER_ADMIN) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No puedes gestionar un SUPER_ADMIN");
-            }
-            if (targetUser.getCompany() != null && current.getCompany() != null
-                    && !targetUser.getCompany().getId().equals(current.getCompany().getId())) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No puedes gestionar usuarios de otra empresa");
-            }
-            return;
-        }
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Sin permiso para gestionar usuarios");
+    /** Variante con {@code userId} explícito, para preguntar por otro usuario. */
+    public boolean tieneRol(Long userId, Long companyId, UserRole rol) {
+        return ambito.tieneRol(userId, companyId, rol);
     }
 
     public void assertSuperAdmin() {
@@ -86,24 +90,60 @@ public class CurrentUserService {
         }
     }
 
+    // ───────────────────────── Ámbito ────────────────────────────────────────
+
+    public void assertCanAccessCompany(Long companyId) {
+        if (!canAccessCompany(companyId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Acceso denegado a esta empresa");
+        }
+    }
+
     public boolean canAccessCompany(Long companyId) {
-        User user = getCurrentUser();
-        if (user.getRole() == UserRole.SUPER_ADMIN) return true;
-        return user.getCompany() != null && user.getCompany().getId().equals(companyId);
+        Long id = idActual();
+        if (ambito.esAdminDePlataforma(id)) return true;
+        return ambito.perteneceALaEmpresa(id, companyId);
+    }
+
+    public void assertCanAccessBranch(Long branchId) {
+        if (!canAccessBranch(branchId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Acceso denegado a esta sucursal");
+        }
     }
 
     public boolean canAccessBranch(Long branchId) {
-        User user = getCurrentUser();
-        if (user.getRole() == UserRole.SUPER_ADMIN) return true;
-        return user.getBranch() != null && user.getBranch().getId().equals(branchId);
+        Long id = idActual();
+        if (ambito.esAdminDePlataforma(id)) return true;
+        return ambito.tieneAccesoALaSucursal(id, branchId);
     }
 
     /**
-     * Empresa del usuario autenticado. Null para SUPER_ADMIN global (sin empresa).
+     * Empresa del usuario autenticado, o {@code null} si es administrador de
+     * plataforma y no opera sobre ninguna en concreto.
      */
     public Long getCurrentCompanyId() {
-        Company company = getCurrentUser().getCompany();
-        return company != null ? company.getId() : null;
+        return ambito.empresaPrincipalDe(idActual()).orElse(null);
+    }
+
+    // ───────────────────────── Gestión de usuarios ───────────────────────────
+
+    public void assertCanManageUser(User targetUser) {
+        Long id = idActual();
+        if (ambito.esAdminDePlataforma(id)) return;
+
+        Long empresa = ambito.empresaPrincipalDe(id).orElse(null);
+        if (empresa == null || !ambito.tieneRol(id, empresa, UserRole.ADMIN)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Sin permiso para gestionar usuarios");
+        }
+
+        if (ambito.esAdminDePlataforma(targetUser.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No puedes gestionar un SUPER_ADMIN");
+        }
+
+        // Un usuario recién construido y aún sin persistir no tiene membresías; su
+        // empresa es la que se le está asignando, y de eso responde quien llama.
+        if (targetUser.getId() != null && !ambito.perteneceALaEmpresa(targetUser.getId(), empresa)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No puedes gestionar usuarios de otra empresa");
+        }
     }
 
     /**
@@ -119,14 +159,14 @@ public class CurrentUserService {
     }
 
     public void assertCanAccessPatient(Long patientId) {
-        // TODO: implementar validación multitenant por companyId/branchId/asignación
+        // TODO(bloque-D): la resuelve authz_patient_read_path, con sus seis vias.
     }
 
     public void assertCanAccessConversation(Long conversationId) {
-        // TODO: implementar validación multitenant por companyId/branchId
+        // TODO(bloque-D): idem, por el contacto de la conversacion.
     }
 
     public void assertCanAccessAppointment(Long appointmentId) {
-        // TODO: implementar validación multitenant por companyId/branchId
+        // TODO(bloque-D): idem, por el paciente de la cita.
     }
 }

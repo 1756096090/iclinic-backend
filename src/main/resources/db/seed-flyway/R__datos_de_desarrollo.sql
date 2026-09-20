@@ -87,6 +87,30 @@ INSERT INTO crm_channel_user_links (id, contact_id, channel_type, external_user_
     (3, 4, 'WHATSAPP', '573002345679', '573002345679', NULL, 'Valentina Cruz López',   CURRENT_TIMESTAMP, 2)
 ON CONFLICT (id) DO NOTHING;
 
+-- ─────────────────────────── Membresias ──────────────────────────────────────
+-- La membresia ES la tenencia: un usuario sin ella no pertenece a ninguna
+-- clinica y, en cuanto se retire el puente, no vera nada.
+--
+-- Va aqui y no en V12 porque las migraciones REPETIBLES corren DESPUES de las
+-- versionadas: cuando V12 hizo su backfill, estos usuarios todavia no existian y
+-- se quedaban sin membresia. El sintoma era un 403 "Sin permiso para gestionar
+-- usuarios" con un ADMIN perfectamente valido.
+--
+-- Isaac (id 5) NO lleva membresia: es administrador de plataforma y no pertenece
+-- a ninguna empresa.
+INSERT INTO company_memberships (id, user_id, company_id, role, is_owner, active, created_at, updated_at) VALUES
+    (1, 1, 1, 'ADMIN',        true,  true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2, 2, 1, 'DENTIST',      false, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (3, 3, 1, 'RECEPTIONIST', false, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (4, 4, 2, 'ADMIN',        true,  true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (id) DO NOTHING;
+
+-- Sin filas en membership_branches: una membresia sin sucursales da acceso a
+-- TODAS las de su empresa, que es lo que corresponde a estos perfiles.
+
+SELECT setval(pg_get_serial_sequence('company_memberships', 'id'),
+              GREATEST((SELECT COALESCE(max(id), 1) FROM company_memberships), 1));
+
 -- ────────────────────────── Conversaciones CRM ───────────────────────────────
 INSERT INTO crm_conversations (id, contact_id, channel_connection_id, assigned_user_id, status, last_message_at, created_at, updated_at, company_id) VALUES
     (1, 1, 1, 2, 'OPEN',   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1),
