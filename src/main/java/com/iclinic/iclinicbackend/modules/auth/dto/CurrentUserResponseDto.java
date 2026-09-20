@@ -6,7 +6,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Getter
 @Builder
@@ -23,6 +23,6 @@ public class CurrentUserResponseDto {
     private String companyName;
     private Long branchId;
     private String branchName;
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 }
 

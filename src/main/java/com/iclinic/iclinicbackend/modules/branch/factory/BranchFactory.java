@@ -32,6 +32,7 @@ public class BranchFactory {
         branch.setName(dto.getName());
         branch.setAddress(dto.getAddress());
         branch.setHasLaboratory(dto.getHasLaboratory());
+        branch.setTimezone(dto.getTimezone());
         branch.setBranchType(BranchType.CLINIC);
         branch.setCompany(company);
         return branch;
@@ -42,6 +43,7 @@ public class BranchFactory {
         branch.setName(dto.getName());
         branch.setAddress(dto.getAddress());
         branch.setBedCapacity(dto.getBedCapacity());
+        branch.setTimezone(dto.getTimezone());
         branch.setBranchType(BranchType.HOSPITAL);
         branch.setCompany(company);
         return branch;

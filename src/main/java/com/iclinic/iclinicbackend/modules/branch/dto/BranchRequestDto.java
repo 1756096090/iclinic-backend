@@ -21,4 +21,10 @@ public abstract class BranchRequestDto {
     @NotBlank(message = "La dirección es requerida")
     @Schema(description = "Dirección de la sucursal", example = "Calle Principal 123")
     protected String address;
+
+    @NotBlank(message = "La zona horaria es requerida")
+    @Schema(description = "Zona horaria IANA de la sucursal. Define que es 'hoy' y "
+            + "que son 'las 9:00' aqui: con sucursales en paises distintos, la del "
+            + "servidor no vale.", example = "America/Guayaquil")
+    private String timezone;
 }

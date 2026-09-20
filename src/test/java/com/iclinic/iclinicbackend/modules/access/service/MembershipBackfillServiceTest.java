@@ -56,7 +56,7 @@ class MembershipBackfillServiceTest {
     @DisplayName("Crea membership para usuario con empresa, ADMIN como OWNER y copia sucursal")
     void createsMembershipForCompanyUser() {
         EcuadorianCompany c1 = company(1L);
-        ClinicBranch branch = new ClinicBranch("Centro", "Av X", false, c1);
+        ClinicBranch branch = new ClinicBranch("Centro", "Av X", false, c1, "America/Guayaquil");
         branch.setId(10L);
         EcuadorianUser admin = user(1L, UserRole.ADMIN, c1, branch);
 

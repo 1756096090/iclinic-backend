@@ -2,7 +2,7 @@ package com.iclinic.iclinicbackend.modules.auth.dto;
 
 import lombok.*;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Getter
 @Builder
@@ -19,6 +19,6 @@ public class ExternalDoctorAccessResponseDto {
     private Long conversationId;
     private String reason;
     private Boolean active;
-    private LocalDateTime expiresAt;
-    private LocalDateTime createdAt;
+    private Instant expiresAt;
+    private Instant createdAt;
 }

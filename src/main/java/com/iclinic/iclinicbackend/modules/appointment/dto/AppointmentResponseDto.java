@@ -5,7 +5,6 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 
 @Data
 @Builder
@@ -16,8 +15,8 @@ public class AppointmentResponseDto {
     private Long contactId;
     private Long doctorId;
     private String doctorName;
-    private LocalDateTime scheduledStart;
-    private LocalDateTime scheduledEnd;
+    private Instant scheduledStart;
+    private Instant scheduledEnd;
     private AppointmentStatus status;
     private String notes;
     private Instant createdAt;

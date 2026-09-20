@@ -7,7 +7,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Data
 @NoArgsConstructor
@@ -29,11 +29,11 @@ public class CreateAppointmentRequestDto {
 
     @NotNull(message = "La fecha/hora de inicio es requerida")
     @Future(message = "La cita debe agendarse en el futuro")
-    private LocalDateTime scheduledStart;
+    private Instant scheduledStart;
 
     @NotNull(message = "La fecha/hora de fin es requerida")
     @Future(message = "La cita debe agendarse en el futuro")
-    private LocalDateTime scheduledEnd;
+    private Instant scheduledEnd;
 
     private String notes;
 }

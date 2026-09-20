@@ -6,7 +6,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "branch_blocked_slots")
@@ -22,10 +22,10 @@ public class BranchBlockedSlot extends ActivableEntity {
     private Branch branch;
 
     @Column(name = "start_date_time", nullable = false)
-    private LocalDateTime startDateTime;
+    private Instant startDateTime;
 
     @Column(name = "end_date_time", nullable = false)
-    private LocalDateTime endDateTime;
+    private Instant endDateTime;
 
     @Column(length = 255)
     private String reason;

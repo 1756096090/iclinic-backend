@@ -28,6 +28,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -41,6 +42,13 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("AppointmentService Advanced Tests")
 class AppointmentServiceAdvancedTest {
+
+    /**
+     * Las citas se construyen como INSTANTES resueltos en la zona de la sucursal.
+     * Con LocalDateTime la prueba pasaba estuviera donde estuviera el servidor,
+     * que es justamente lo que dejaba de comprobarse.
+     */
+    private static final java.time.ZoneId ZONA = java.time.ZoneId.of("America/Guayaquil");
 
     @Mock
     private AppointmentRepository appointmentRepository;
@@ -86,7 +94,7 @@ class AppointmentServiceAdvancedTest {
         company = new EcuadorianCompany("Test Company", "1234567890123");
         company.setId(1L);
 
-        branch = new ClinicBranch("Test Branch", "Test Address", true, company);
+        branch = new ClinicBranch("Test Branch", "Test Address", true, company, "America/Guayaquil");
         branch.setId(1L);
 
         contact = CrmContact.builder().id(1L).company(company).build();
@@ -143,8 +151,8 @@ class AppointmentServiceAdvancedTest {
 
         BranchBlockedSlot blockedSlot = BranchBlockedSlot.builder()
                 .id(1L)
-                .startDateTime(LocalDateTime.of(testDate, LocalTime.of(12, 0)))
-                .endDateTime(LocalDateTime.of(testDate, LocalTime.of(13, 0)))
+                .startDateTime(testDate.atTime(12, 0).atZone(ZONA).toInstant())
+                .endDateTime(testDate.atTime(13, 0).atZone(ZONA).toInstant())
                 .build();
 
         when(branchBlockedSlotRepository.findByBranchIdAndActiveTrueAndStartDateTimeLessThanAndEndDateTimeGreaterThan(
@@ -156,8 +164,8 @@ class AppointmentServiceAdvancedTest {
 
         // No debería incluir slots en el bloque 12:00-13:00
         for (AvailableSlotDto slot : slots) {
-            assertFalse(slot.getStart().isBefore(LocalDateTime.of(testDate, LocalTime.of(13, 0))) &&
-                       slot.getEnd().isAfter(LocalDateTime.of(testDate, LocalTime.of(12, 0))));
+            assertFalse(slot.getStart().isBefore(testDate.atTime(13, 0).atZone(ZONA).toInstant()) &&
+                       slot.getEnd().isAfter(testDate.atTime(12, 0).atZone(ZONA).toInstant()));
         }
     }
 
@@ -169,12 +177,12 @@ class AppointmentServiceAdvancedTest {
                 .branchId(2L)
                 .contactId(1L)
                 .doctorId(2L)
-                .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(10, 0)))
-                .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(10, 30)))
+                .scheduledStart(testDate.atTime(10, 0).atZone(ZONA).toInstant())
+                .scheduledEnd(testDate.atTime(10, 30).atZone(ZONA).toInstant())
                 .build();
 
         Branch differentBranch = new ClinicBranch("Otro", "Otro", true,
-                new EcuadorianCompany("Otra", "9876543210"));
+                new EcuadorianCompany("Otra", "9876543210"), "America/Guayaquil");
         differentBranch.setId(2L);
 
         when(companyRepository.findById(1L)).thenReturn(Optional.of(company));
@@ -191,8 +199,8 @@ class AppointmentServiceAdvancedTest {
                 .branchId(1L)
                 .contactId(2L)
                 .doctorId(2L)
-                .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(10, 0)))
-                .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(10, 30)))
+                .scheduledStart(testDate.atTime(10, 0).atZone(ZONA).toInstant())
+                .scheduledEnd(testDate.atTime(10, 30).atZone(ZONA).toInstant())
                 .build();
 
         Company differentCompany = new EcuadorianCompany("Otra", "9876543210");
@@ -216,8 +224,8 @@ class AppointmentServiceAdvancedTest {
                 .build();
 
         RescheduleAppointmentRequestDto dto = RescheduleAppointmentRequestDto.builder()
-                .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(11, 0)))
-                .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(11, 30)))
+                .scheduledStart(testDate.atTime(11, 0).atZone(ZONA).toInstant())
+                .scheduledEnd(testDate.atTime(11, 30).atZone(ZONA).toInstant())
                 .build();
 
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(completedAppointment));
@@ -285,8 +293,8 @@ class AppointmentServiceAdvancedTest {
                 .branchId(1L)
                 .contactId(1L)
                 .doctorId(2L)
-                .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(10, 0)))
-                .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(10, 30)))
+                .scheduledStart(testDate.atTime(10, 0).atZone(ZONA).toInstant())
+                .scheduledEnd(testDate.atTime(10, 30).atZone(ZONA).toInstant())
                 .build();
 
         when(companyRepository.findById(1L)).thenReturn(Optional.of(company));
@@ -325,13 +333,13 @@ class AppointmentServiceAdvancedTest {
                 .contact(contact)
                 .doctor(doctor)
                 .status(AppointmentStatus.SCHEDULED)
-                .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(10, 0)))
-                .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(10, 30)))
+                .scheduledStart(testDate.atTime(10, 0).atZone(ZONA).toInstant())
+                .scheduledEnd(testDate.atTime(10, 30).atZone(ZONA).toInstant())
                 .build();
 
         RescheduleAppointmentRequestDto dto = RescheduleAppointmentRequestDto.builder()
-                .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(11, 0)))
-                .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(11, 30)))
+                .scheduledStart(testDate.atTime(11, 0).atZone(ZONA).toInstant())
+                .scheduledEnd(testDate.atTime(11, 30).atZone(ZONA).toInstant())
                 .build();
 
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appointment));

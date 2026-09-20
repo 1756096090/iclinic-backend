@@ -6,7 +6,7 @@ import com.iclinic.iclinicbackend.shared.enums.ChannelType;
 import lombok.Builder;
 import lombok.Data;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Data
 @Builder
@@ -18,6 +18,6 @@ public class ChannelConnectionResponseDto {
     private String externalAccountId;
     private String externalPhoneNumberId;
     private ChannelConnectionStatus status;
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 }
 

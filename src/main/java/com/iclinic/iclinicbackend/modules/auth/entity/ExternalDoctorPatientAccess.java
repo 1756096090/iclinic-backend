@@ -4,7 +4,7 @@ import com.iclinic.iclinicbackend.modules.user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "external_doctor_patient_access")
@@ -46,11 +46,11 @@ public class ExternalDoctorPatientAccess {
     private Boolean active = true;
 
     @Column
-    private LocalDateTime expiresAt;
+    private Instant expiresAt;
 
     @Column(nullable = false, updatable = false)
     @Builder.Default
-    private LocalDateTime createdAt = LocalDateTime.now();
+    private Instant createdAt = Instant.now();
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by_id")

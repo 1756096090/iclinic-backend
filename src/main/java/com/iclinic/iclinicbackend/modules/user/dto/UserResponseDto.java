@@ -6,7 +6,7 @@ import com.iclinic.iclinicbackend.shared.enums.UserType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * DTO de respuesta para usuario.
@@ -57,7 +57,7 @@ public class UserResponseDto {
     private Boolean active;
 
     @Schema(description = "Fecha de creación")
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @Schema(description = "ID de la empresa (si aplica)")
     private Long companyId;

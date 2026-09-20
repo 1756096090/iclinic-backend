@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 @Service
@@ -63,7 +63,7 @@ public class ExternalDoctorAccessService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo disponible para EXTERNAL_DOCTOR");
         }
         return accessRepository
-                .findByExternalDoctorIdAndActiveTrueAndExpiresAtAfter(currentUser.getId(), LocalDateTime.now())
+                .findByExternalDoctorIdAndActiveTrueAndExpiresAtAfter(currentUser.getId(), Instant.now())
                 .stream().map(this::toResponseDto).toList();
     }
 
@@ -75,7 +75,7 @@ public class ExternalDoctorAccessService {
         }
         return accessRepository
                 .findByExternalDoctorIdAndPatientIdAndActiveTrueAndExpiresAtAfter(
-                        currentUser.getId(), patientId, LocalDateTime.now())
+                        currentUser.getId(), patientId, Instant.now())
                 .map(this::toResponseDto)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Sin acceso a este paciente"));
     }
