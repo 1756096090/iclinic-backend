@@ -18,10 +18,10 @@ INSERT INTO companies (id, name, company_type, type, ruc, nit) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- ─────────────────────────────── Sucursales ──────────────────────────────────
-INSERT INTO branches (id, name, address, branch_type, type, company_id, has_laboratory) VALUES
-    (1, 'Sucursal Centro Quito',    'Av. Patria N31-169, Quito',              'CLINIC', 'CLINIC', 1, true),
-    (2, 'Sucursal Mariscal Quito',  'Mariscal Sucre y 6 de Diciembre, Quito', 'CLINIC', 'CLINIC', 1, true),
-    (3, 'Sucursal Centro Bogotá',   'Carrera 7 #32-16, Bogotá',               'CLINIC', 'CLINIC', 2, true)
+INSERT INTO branches (id, name, address, branch_type, type, company_id, has_laboratory, timezone) VALUES
+    (1, 'Sucursal Centro Quito',    'Av. Patria N31-169, Quito',              'CLINIC', 'CLINIC', 1, true, 'America/Guayaquil'),
+    (2, 'Sucursal Mariscal Quito',  'Mariscal Sucre y 6 de Diciembre, Quito', 'CLINIC', 'CLINIC', 1, true, 'America/Guayaquil'),
+    (3, 'Sucursal Centro Bogotá',   'Carrera 7 #32-16, Bogotá',               'CLINIC', 'CLINIC', 2, true, 'America/Bogota')
 ON CONFLICT (id) DO NOTHING;
 
 -- ──────────────────────────────── Usuarios ───────────────────────────────────

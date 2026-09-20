@@ -10,7 +10,6 @@ import lombok.*;
 import lombok.experimental.SuperBuilder;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
@@ -72,10 +71,10 @@ public abstract class User {
 
     @Column(nullable = false, updatable = false)
     @Builder.Default
-    private LocalDateTime createdAt = LocalDateTime.now();
+    private Instant createdAt = Instant.now();
 
     @Column
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     /** El {@code sub} del token de Keycloak. Fuente de verdad de la identidad. */
     @Column(name = "keycloak_user_id", unique = true)
@@ -114,6 +113,6 @@ public abstract class User {
 
     @PreUpdate
     protected void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = Instant.now();
     }
 }

@@ -40,8 +40,8 @@ class UserRepositorySearchTest {
     @DisplayName("shouldSearchUsersByBranchAndTextWithLimit")
     void shouldSearchUsersByBranchAndTextWithLimit() {
         EcuadorianCompany company = companyRepository.save(new EcuadorianCompany("Clinica Central Test", "1799999999999"));
-        ClinicBranch branch1 = branchRepository.save(new ClinicBranch("Sucursal 1", "Av. Uno", true, company));
-        ClinicBranch branch2 = branchRepository.save(new ClinicBranch("Sucursal 2", "Av. Dos", true, company));
+        ClinicBranch branch1 = branchRepository.save(new ClinicBranch("Sucursal 1", "Av. Uno", true, company, "America/Guayaquil"));
+        ClinicBranch branch2 = branchRepository.save(new ClinicBranch("Sucursal 2", "Av. Dos", true, company, "America/Guayaquil"));
         EcuadorianUser veronica = new EcuadorianUser();
         veronica.setFirstName("Veronica");
         veronica.setLastName("Salazar");
@@ -79,7 +79,7 @@ class UserRepositorySearchTest {
     @DisplayName("shouldFindOnlyActiveDoctorsByBranch")
     void shouldFindOnlyActiveDoctorsByBranch() {
         EcuadorianCompany company = companyRepository.save(new EcuadorianCompany("Clinica Central Test", "1799999999998"));
-        ClinicBranch branch = branchRepository.save(new ClinicBranch("Sucursal 1", "Av. Uno", true, company));
+        ClinicBranch branch = branchRepository.save(new ClinicBranch("Sucursal 1", "Av. Uno", true, company, "America/Guayaquil"));
 
         EcuadorianUser activeDoctor = new EcuadorianUser();
         activeDoctor.setFirstName("Ana");

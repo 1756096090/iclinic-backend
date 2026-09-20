@@ -51,6 +51,7 @@ class BranchControllerTest {
         clinicRequestDto = new CreateClinicBranchRequestDto();
         clinicRequestDto.setName("Sucursal Centro");
         clinicRequestDto.setAddress("Calle Principal 123");
+        clinicRequestDto.setTimezone("America/Guayaquil");
         clinicRequestDto.setHasLaboratory(true);
 
         clinicResponseDto = new ClinicBranchResponseDto();
@@ -64,6 +65,7 @@ class BranchControllerTest {
         hospitalRequestDto.setName("Hospital Central");
         hospitalRequestDto.setAddress("Av. Hospital 456");
         hospitalRequestDto.setBedCapacity(50);
+        hospitalRequestDto.setTimezone("America/Guayaquil");
 
         hospitalResponseDto = new HospitalBranchResponseDto();
         hospitalResponseDto.setId(2L);
@@ -138,6 +140,7 @@ class BranchControllerTest {
         branch.setName("Sucursal Centro");
         branch.setAddress("Calle Principal 123");
         branch.setHasLaboratory(true);
+        branch.setTimezone("America/Guayaquil");
 
         when(branchService.findById(1L)).thenReturn(branch);
 

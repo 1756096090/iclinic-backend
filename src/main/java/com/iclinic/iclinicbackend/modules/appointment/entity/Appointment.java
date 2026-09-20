@@ -10,7 +10,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "appointments")
@@ -38,10 +38,10 @@ public class Appointment extends BaseEntity {
     private User doctor;
 
     @Column(name = "scheduled_start", nullable = false)
-    private LocalDateTime scheduledStart;
+    private Instant scheduledStart;
 
     @Column(name = "scheduled_end", nullable = false)
-    private LocalDateTime scheduledEnd;
+    private Instant scheduledEnd;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -61,7 +62,7 @@ class ChannelConnectionSoftDeleteTest {
         assertThat(created.getDeletedAt()).isNull();
 
         // Action: Mark as deleted
-        created.setDeletedAt(LocalDateTime.now());
+        created.setDeletedAt(Instant.now());
         channelConnectionRepository.save(created);
 
         // Verify marked as deleted
@@ -93,7 +94,7 @@ class ChannelConnectionSoftDeleteTest {
         );
 
         // Mark one as deleted
-        toDelete.setDeletedAt(LocalDateTime.now());
+        toDelete.setDeletedAt(Instant.now());
         channelConnectionRepository.save(toDelete);
 
         // Query by company
@@ -130,7 +131,7 @@ class ChannelConnectionSoftDeleteTest {
         );
 
         // Mark as deleted
-        deleted.setDeletedAt(LocalDateTime.now());
+        deleted.setDeletedAt(Instant.now());
         channelConnectionRepository.save(deleted);
 
         // Query
@@ -161,7 +162,7 @@ class ChannelConnectionSoftDeleteTest {
         Long channelId = channel.getId();
 
         // Delete (mark as deleted)
-        channel.setDeletedAt(LocalDateTime.now());
+        channel.setDeletedAt(Instant.now());
         channelConnectionRepository.save(channel);
 
         // Direct query with findById still returns the record
@@ -184,7 +185,7 @@ class ChannelConnectionSoftDeleteTest {
         );
         Long channelId = channel.getId();
 
-        channel.setDeletedAt(LocalDateTime.now());
+        channel.setDeletedAt(Instant.now());
         channelConnectionRepository.save(channel);
 
         // Recovery: set deleted_at to null

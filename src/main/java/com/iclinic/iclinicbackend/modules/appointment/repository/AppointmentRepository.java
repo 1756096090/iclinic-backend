@@ -4,7 +4,7 @@ import com.iclinic.iclinicbackend.modules.appointment.entity.Appointment;
 import com.iclinic.iclinicbackend.shared.enums.AppointmentStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 @SuppressWarnings("unused")
@@ -16,8 +16,8 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
 
     List<Appointment> findByDoctorIdAndScheduledStartBetweenOrderByScheduledStartAsc(
             Long doctorId,
-            LocalDateTime start,
-            LocalDateTime end
+            Instant start,
+            Instant end
     );
 
     List<Appointment> findByContactIdOrderByScheduledStartDesc(Long contactId);
@@ -25,15 +25,15 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     List<Appointment> findByDoctorIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThan(
             Long doctorId,
             List<AppointmentStatus> statuses,
-            LocalDateTime end,
-            LocalDateTime start
+            Instant end,
+            Instant start
     );
 
     List<Appointment> findByDoctorIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThanAndIdNot(
             Long doctorId,
             List<AppointmentStatus> statuses,
-            LocalDateTime end,
-            LocalDateTime start,
+            Instant end,
+            Instant start,
             Long appointmentId
     );
 }

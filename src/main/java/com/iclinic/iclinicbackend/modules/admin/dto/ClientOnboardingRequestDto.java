@@ -47,6 +47,10 @@ public class ClientOnboardingRequestDto {
         @NotBlank
         private String address;
         private Boolean hasLaboratory;
+
+        /** Zona IANA, p. ej. America/Guayaquil. */
+        @NotBlank(message = "La zona horaria de la sucursal es requerida")
+        private String timezone;
     }
 
     @Getter

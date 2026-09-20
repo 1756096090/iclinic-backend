@@ -26,8 +26,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DayOfWeek;
+import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @Service
@@ -66,8 +69,12 @@ public class AppointmentServiceImpl implements AppointmentService {
             return List.of();
         }
 
-        LocalDateTime dayStart = LocalDateTime.of(date, schedule.getStartTime());
-        LocalDateTime dayEnd = LocalDateTime.of(date, schedule.getEndTime());
+        // `date` y el horario del doctor son hora de PARED de la sucursal: "el 1
+        // de octubre, de 9 a 13" significa 9 en Quito o 9 en Bogota segun donde
+        // este. Se resuelven contra la zona de la sucursal, nunca la del servidor.
+        ZoneId zona = branch.getZoneId();
+        Instant dayStart = date.atTime(schedule.getStartTime()).atZone(zona).toInstant();
+        Instant dayEnd = date.atTime(schedule.getEndTime()).atZone(zona).toInstant();
 
         List<BranchBlockedSlot> blockedSlots =
                 branchBlockedSlotRepository
@@ -84,12 +91,12 @@ public class AppointmentServiceImpl implements AppointmentService {
                 );
 
         int slotDuration = schedule.getSlotDurationMinutes();
-        LocalDateTime current = dayStart;
+        Instant current = dayStart;
         java.util.ArrayList<AvailableSlotDto> slots = new java.util.ArrayList<>();
 
-        while (!current.plusMinutes(slotDuration).isAfter(dayEnd)) {
-            LocalDateTime slotStart = current;
-            LocalDateTime slotEnd = current.plusMinutes(slotDuration);
+        while (!current.plus(slotDuration, ChronoUnit.MINUTES).isAfter(dayEnd)) {
+            Instant slotStart = current;
+            Instant slotEnd = current.plus(slotDuration, ChronoUnit.MINUTES);
 
             boolean blocked = overlapsBlockedSlot(slotStart, slotEnd, blockedSlots);
             boolean occupied = overlapsAppointment(slotStart, slotEnd, appointments);
@@ -126,7 +133,7 @@ public class AppointmentServiceImpl implements AppointmentService {
         validateContactBelongsToCompany(contact, company);
         validateDoctorBelongsToBranch(doctor, branch);
 
-        validateTimeInsideSchedule(doctor.getId(), dto.getScheduledStart(), dto.getScheduledEnd());
+        validateTimeInsideSchedule(branch, doctor.getId(), dto.getScheduledStart(), dto.getScheduledEnd());
         validateNotBlocked(branch.getId(), dto.getScheduledStart(), dto.getScheduledEnd());
         validateNoAppointmentOverlap(doctor.getId(), dto.getScheduledStart(), dto.getScheduledEnd());
 
@@ -162,6 +169,7 @@ public class AppointmentServiceImpl implements AppointmentService {
         }
 
         validateTimeInsideSchedule(
+                appointment.getBranch(),
                 appointment.getDoctor().getId(),
                 dto.getScheduledStart(),
                 dto.getScheduledEnd()
@@ -292,7 +300,7 @@ public class AppointmentServiceImpl implements AppointmentService {
         }
     }
 
-    private void validateDateRange(LocalDateTime start, LocalDateTime end) {
+    private void validateDateRange(Instant start, Instant end) {
         if (start == null || end == null) {
             throw new IllegalArgumentException("La fecha/hora de inicio y fin son requeridas");
         }
@@ -301,26 +309,37 @@ public class AppointmentServiceImpl implements AppointmentService {
         }
     }
 
-    private void validateTimeInsideSchedule(Long doctorId, LocalDateTime start, LocalDateTime end) {
-        if (!start.toLocalDate().equals(end.toLocalDate())) {
+    /**
+     * El horario del doctor esta en hora de pared, asi que para compararlo hay que
+     * llevar los instantes a la zona de la SUCURSAL. Hacerlo en la del servidor
+     * daria una respuesta distinta segun donde este desplegada la aplicacion, y
+     * con una sucursal en Quito y otra en Bogota, distinta tambien entre ellas.
+     */
+    private void validateTimeInsideSchedule(Branch branch, Long doctorId, Instant start, Instant end) {
+        ZoneId zona = branch.getZoneId();
+        ZonedDateTime inicioLocal = start.atZone(zona);
+        ZonedDateTime finLocal = end.atZone(zona);
+
+        if (!inicioLocal.toLocalDate().equals(finLocal.toLocalDate())) {
             throw new IllegalArgumentException("La cita debe estar dentro del mismo día");
         }
 
-        DayOfWeek dayOfWeek = start.getDayOfWeek();
+        DayOfWeek dayOfWeek = inicioLocal.getDayOfWeek();
         BranchSchedule schedule = branchScheduleRepository
                 .findByDoctorIdAndDayOfWeekAndActiveTrue(doctorId, dayOfWeek)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "El doctor no tiene horario activo para el día " + dayOfWeek));
 
-        LocalDateTime scheduleStart = LocalDateTime.of(start.toLocalDate(), schedule.getStartTime());
-        LocalDateTime scheduleEnd = LocalDateTime.of(start.toLocalDate(), schedule.getEndTime());
+        LocalDate dia = inicioLocal.toLocalDate();
+        Instant scheduleStart = dia.atTime(schedule.getStartTime()).atZone(zona).toInstant();
+        Instant scheduleEnd = dia.atTime(schedule.getEndTime()).atZone(zona).toInstant();
 
         if (start.isBefore(scheduleStart) || end.isAfter(scheduleEnd)) {
             throw new IllegalArgumentException("La cita está fuera del horario configurado para la sucursal");
         }
     }
 
-    private void validateNotBlocked(Long branchId, LocalDateTime start, LocalDateTime end) {
+    private void validateNotBlocked(Long branchId, Instant start, Instant end) {
         List<BranchBlockedSlot> blockedSlots =
                 branchBlockedSlotRepository
                         .findByBranchIdAndActiveTrueAndStartDateTimeLessThanAndEndDateTimeGreaterThan(
@@ -332,7 +351,7 @@ public class AppointmentServiceImpl implements AppointmentService {
         }
     }
 
-    private void validateNoAppointmentOverlap(Long doctorId, LocalDateTime start, LocalDateTime end) {
+    private void validateNoAppointmentOverlap(Long doctorId, Instant start, Instant end) {
         List<Appointment> overlapping =
                 appointmentRepository.findByDoctorIdAndStatusInAndScheduledStartLessThanAndScheduledEndGreaterThan(
                         doctorId,
@@ -347,8 +366,8 @@ public class AppointmentServiceImpl implements AppointmentService {
     }
 
     private boolean overlapsBlockedSlot(
-            LocalDateTime start,
-            LocalDateTime end,
+            Instant start,
+            Instant end,
             List<BranchBlockedSlot> blockedSlots
     ) {
         return blockedSlots.stream()
@@ -357,8 +376,8 @@ public class AppointmentServiceImpl implements AppointmentService {
     }
 
     private boolean overlapsAppointment(
-            LocalDateTime start,
-            LocalDateTime end,
+            Instant start,
+            Instant end,
             List<Appointment> appointments
     ) {
         return appointments.stream()

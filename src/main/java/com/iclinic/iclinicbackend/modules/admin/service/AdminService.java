@@ -40,7 +40,8 @@ public class AdminService {
                 dto.getBranch().getName(),
                 dto.getBranch().getAddress(),
                 dto.getBranch().getHasLaboratory() != null && dto.getBranch().getHasLaboratory(),
-                company
+                company,
+                dto.getBranch().getTimezone()
         );
         branch = (ClinicBranch) branchRepository.save(branch);
 

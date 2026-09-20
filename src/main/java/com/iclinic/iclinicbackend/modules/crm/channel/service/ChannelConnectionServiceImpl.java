@@ -22,7 +22,7 @@ import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 
@@ -163,7 +163,7 @@ public class ChannelConnectionServiceImpl implements ChannelConnectionService {
     @Override
     public void deleteById(Long id) {
         ChannelConnection connection = load(id);
-        connection.setDeletedAt(LocalDateTime.now());
+        connection.setDeletedAt(Instant.now());
         channelConnectionRepository.save(connection);
         log.info("Canal eliminado lógicamente: channelId={}", id);
     }

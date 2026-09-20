@@ -47,5 +47,11 @@ public class CreateBranchUnifiedRequestDto {
     // --- Campo específico de HOSPITAL ---
     @Schema(description = "Capacidad de camas (solo para HOSPITAL)", example = "50")
     private Integer bedCapacity;
+
+    @NotBlank(message = "La zona horaria es requerida")
+    @Schema(description = "Zona horaria IANA de la sucursal. Define que es 'hoy' y "
+            + "que son 'las 9:00' aqui: con sucursales en paises distintos, la del "
+            + "servidor no vale.", example = "America/Guayaquil")
+    private String timezone;
 }
 

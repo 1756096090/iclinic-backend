@@ -8,7 +8,7 @@ import com.iclinic.iclinicbackend.shared.enums.ChannelType;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "crm_channel_connections")
@@ -59,15 +59,15 @@ public class ChannelConnection {
     private ChannelConnectionStatus status;
 
     @Column(nullable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @Column
-    private LocalDateTime deletedAt;
+    private Instant deletedAt;
 
     @PrePersist
     public void prePersist() {
         if (createdAt == null) {
-            createdAt = LocalDateTime.now();
+            createdAt = Instant.now();
         }
         if (status == null) {
             status = ChannelConnectionStatus.PENDING;

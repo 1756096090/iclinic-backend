@@ -5,14 +5,14 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class AvailableSlotDto {
-    private LocalDateTime start;
-    private LocalDateTime end;
+    private Instant start;
+    private Instant end;
 }
 

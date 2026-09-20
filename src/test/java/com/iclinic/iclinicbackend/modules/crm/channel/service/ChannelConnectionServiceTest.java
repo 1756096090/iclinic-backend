@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -65,7 +66,7 @@ class ChannelConnectionServiceImplTest {
                 .provider(ChannelProvider.META)
                 .accessTokenEncrypted("token2")
                 .status(ChannelConnectionStatus.ACTIVE)
-                .deletedAt(LocalDateTime.now())
+                .deletedAt(Instant.now())
                 .build();
         channelRepository.save(deleted);
 

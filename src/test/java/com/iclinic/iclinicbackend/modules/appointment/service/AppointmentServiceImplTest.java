@@ -29,6 +29,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -42,6 +43,13 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("AppointmentService Tests")
 class AppointmentServiceImplTest {
+
+    /**
+     * Las citas se construyen como INSTANTES resueltos en la zona de la sucursal.
+     * Con LocalDateTime la prueba pasaba estuviera donde estuviera el servidor,
+     * que es justamente lo que dejaba de comprobarse.
+     */
+    private static final java.time.ZoneId ZONA = java.time.ZoneId.of("America/Guayaquil");
 
     @Mock
     private AppointmentRepository appointmentRepository;
@@ -88,7 +96,7 @@ class AppointmentServiceImplTest {
         company = new EcuadorianCompany("Test Company", "1234567890123");
         company.setId(1L);
 
-        branch = new ClinicBranch("Test Branch", "Test Address", true, company);
+        branch = new ClinicBranch("Test Branch", "Test Address", true, company, "America/Guayaquil");
         branch.setId(1L);
 
         contact = CrmContact.builder().id(1L).company(company).build();
@@ -121,8 +129,8 @@ class AppointmentServiceImplTest {
                 .branch(branch)
                 .contact(contact)
                 .doctor(doctor)
-                .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(10, 0)))
-                .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(10, 30)))
+                .scheduledStart(testDate.atTime(10, 0).atZone(ZONA).toInstant())
+                .scheduledEnd(testDate.atTime(10, 30).atZone(ZONA).toInstant())
                 .status(AppointmentStatus.SCHEDULED)
                 .build();
     }
@@ -176,8 +184,8 @@ class AppointmentServiceImplTest {
                 .branchId(1L)
                 .contactId(1L)
                 .doctorId(2L)
-                .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(10, 0)))
-                .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(10, 30)))
+                .scheduledStart(testDate.atTime(10, 0).atZone(ZONA).toInstant())
+                .scheduledEnd(testDate.atTime(10, 30).atZone(ZONA).toInstant())
                 .notes("Test appointment")
                 .build();
 
@@ -208,8 +216,8 @@ class AppointmentServiceImplTest {
                 .branchId(1L)
                 .contactId(1L)
                 .doctorId(2L)
-                .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(10, 0)))
-                .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(10, 30)))
+                .scheduledStart(testDate.atTime(10, 0).atZone(ZONA).toInstant())
+                .scheduledEnd(testDate.atTime(10, 30).atZone(ZONA).toInstant())
                 .build();
 
         when(companyRepository.findById(999L)).thenThrow(new CompanyNotFoundException(999L));
@@ -225,8 +233,8 @@ class AppointmentServiceImplTest {
                 .branchId(1L)
                 .contactId(1L)
                 .doctorId(2L)
-                .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(10, 30)))
-                .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(10, 0)))
+                .scheduledStart(testDate.atTime(10, 30).atZone(ZONA).toInstant())
+                .scheduledEnd(testDate.atTime(10, 0).atZone(ZONA).toInstant())
                 .build();
 
 
@@ -241,15 +249,15 @@ class AppointmentServiceImplTest {
                 .branchId(1L)
                 .contactId(1L)
                 .doctorId(2L)
-                .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(10, 0)))
-                .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(10, 30)))
+                .scheduledStart(testDate.atTime(10, 0).atZone(ZONA).toInstant())
+                .scheduledEnd(testDate.atTime(10, 30).atZone(ZONA).toInstant())
                 .build();
 
         Appointment conflictingAppointment = Appointment.builder()
                 .id(2L)
                 .status(AppointmentStatus.CONFIRMED)
-                .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(10, 15)))
-                .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(10, 45)))
+                .scheduledStart(testDate.atTime(10, 15).atZone(ZONA).toInstant())
+                .scheduledEnd(testDate.atTime(10, 45).atZone(ZONA).toInstant())
                 .build();
 
         when(companyRepository.findById(1L)).thenReturn(Optional.of(company));
@@ -269,8 +277,8 @@ class AppointmentServiceImplTest {
     @Test
     @DisplayName("rescheduleAppointment - Reagenda cita exitosamente")
     void testRescheduleAppointmentSuccess() {
-        LocalDateTime newStart = LocalDateTime.of(testDate, LocalTime.of(11, 0));
-        LocalDateTime newEnd = LocalDateTime.of(testDate, LocalTime.of(11, 30));
+        Instant newStart = testDate.atTime(11, 0).atZone(ZONA).toInstant();
+        Instant newEnd = testDate.atTime(11, 30).atZone(ZONA).toInstant();
 
         RescheduleAppointmentRequestDto dto = RescheduleAppointmentRequestDto.builder()
                 .scheduledStart(newStart)
@@ -301,8 +309,8 @@ class AppointmentServiceImplTest {
                 .build();
 
         RescheduleAppointmentRequestDto dto = RescheduleAppointmentRequestDto.builder()
-                .scheduledStart(LocalDateTime.of(testDate, LocalTime.of(11, 0)))
-                .scheduledEnd(LocalDateTime.of(testDate, LocalTime.of(11, 30)))
+                .scheduledStart(testDate.atTime(11, 0).atZone(ZONA).toInstant())
+                .scheduledEnd(testDate.atTime(11, 30).atZone(ZONA).toInstant())
                 .build();
 
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(cancelledAppointment));

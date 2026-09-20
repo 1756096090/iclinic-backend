@@ -19,8 +19,8 @@ public class HospitalBranch extends Branch {
     private Integer bedCapacity;
 
     public HospitalBranch(String name, String address, Integer bedCapacity,
-            com.iclinic.iclinicbackend.modules.company.entity.Company company) {
-        super(null, name, address, BranchType.HOSPITAL, company);
+            com.iclinic.iclinicbackend.modules.company.entity.Company company, String timezone) {
+        super(null, name, address, BranchType.HOSPITAL, timezone, company);
         this.bedCapacity = bedCapacity;
     }
 }

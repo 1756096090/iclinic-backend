@@ -19,8 +19,8 @@ public class ClinicBranch extends Branch {
     private Boolean hasLaboratory;
 
     public ClinicBranch(String name, String address, Boolean hasLaboratory,
-            com.iclinic.iclinicbackend.modules.company.entity.Company company) {
-        super(null, name, address, BranchType.CLINIC, company);
+            com.iclinic.iclinicbackend.modules.company.entity.Company company, String timezone) {
+        super(null, name, address, BranchType.CLINIC, timezone, company);
         this.hasLaboratory = hasLaboratory;
     }
 }
